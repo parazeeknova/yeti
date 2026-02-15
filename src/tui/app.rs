@@ -309,8 +309,8 @@ impl App {
                 let lines = vec![
                     Line::from(""),
                     Line::from(vec![
-                        Span::styled("  ", self.theme.fg_style()),
-                        Span::styled(branch.as_str(), self.theme.dim_style()),
+                        Span::styled("  yeti ", self.theme.accent_style()),
+                        Span::styled(branch.as_str(), self.theme.fg_style()),
                     ]),
                     Line::from(""),
                     Line::from(vec![
@@ -347,8 +347,8 @@ impl App {
         let separator = "─".repeat(area.width as usize).chars().take(area.width as usize).collect::<String>();
 
         let mut header = vec![
-            Span::styled("  ", self.theme.fg_style()),
-            Span::styled(branch, self.theme.accent_style()),
+            Span::styled("  yeti ", self.theme.accent_style()),
+            Span::styled(branch, self.theme.fg_style()),
             Span::styled("  ", self.theme.fg_style()),
             Span::styled(format!("{} files", files.len()), self.theme.dim_style()),
             Span::styled("  ", self.theme.fg_style()),
@@ -357,7 +357,7 @@ impl App {
             Span::styled(format!("-{}", total_del), self.theme.red_style()),
         ];
 
-        if status == "committed" {
+        if status == "territory marked" || status == "scent marked" {
             header.push(Span::styled("    ", self.theme.fg_style()));
             header.push(Span::styled("done", self.theme.green_style()));
         }

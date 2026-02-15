@@ -30,7 +30,10 @@ pub fn draw_key_input(
     };
 
     let mut lines = vec![
-        Line::from(Span::styled("mark your territory", theme.accent_style())),
+        Line::from(Span::styled(
+            "yeti  mark your territory",
+            theme.accent_style(),
+        )),
         Line::from(""),
         Line::from(Span::styled(masked, theme.fg_style())),
     ];
@@ -59,7 +62,7 @@ pub fn draw_error(f: &mut Frame, theme: &Theme, message: &str, retryable: bool) 
     f.render_widget(Clear, area);
 
     let mut lines = vec![
-        Line::from(Span::styled("lost the scent", theme.red_style())),
+        Line::from(Span::styled("yeti  lost the scent", theme.red_style())),
         Line::from(""),
         Line::from(Span::styled(message, theme.fg_style())),
         Line::from(""),

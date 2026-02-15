@@ -224,58 +224,44 @@ impl Tui {
         println!();
 
         let msg_lines: Vec<&str> = result.message.lines().collect();
-        let max_msg_len = msg_lines
-            .iter()
-            .map(|l| l.chars().count())
-            .max()
-            .unwrap_or(20)
-            .max(20);
+        let msg_inner_w = table_w.saturating_sub(1);
 
-        println!("  {}┌{}┐{}", dim, "─".repeat(max_msg_len + 2), reset);
+        println!("  {}┌{}┐{}", dim, "─".repeat(table_w), reset);
 
         let mut first = true;
         for line in msg_lines.iter() {
             let line_len = line.chars().count();
-            let padding = max_msg_len.saturating_sub(line_len) + 1;
+            let padding = msg_inner_w.saturating_sub(line_len);
 
             if first {
                 println!(
-                    "  {}│{} {}{}{}{} {}│{}",
-                    dim,
-                    reset,
-                    bold,
-                    line,
-                    reset,
+                    "  {}│{} {}{}{}{}{}│{}",
+                    dim, reset,
+                    bold, line, reset,
                     " ".repeat(padding),
-                    dim,
-                    reset
+                    dim, reset
                 );
                 first = false;
             } else if line.is_empty() {
+                let spaces = " ".repeat(msg_inner_w);
                 println!(
-                    "  {}│{} {:p$} {}│{}",
-                    dim,
-                    reset,
-                    "",
-                    dim,
-                    reset,
-                    p = max_msg_len + 1
+                    "  {}│{} {}│{}{}",
+                    dim, reset,
+                    spaces,
+                    dim, reset
                 );
             } else {
+                let spaces = " ".repeat(padding);
                 println!(
-                    "  {}│{} {}{:p$} {}│{}",
-                    dim,
-                    reset,
-                    line,
-                    "",
-                    dim,
-                    reset,
-                    p = padding
+                    "  {}│{} {}{}│{}{}",
+                    dim, reset,
+                    line, spaces,
+                    dim, reset
                 );
             }
         }
 
-        println!("  {}└{}┘{}", dim, "─".repeat(max_msg_len + 2), reset);
+        println!("  {}└{}┘{}", dim, "─".repeat(table_w), reset);
 
         println!();
     }

@@ -1,11 +1,10 @@
-use crate::prompt::FileInfo;
 use crate::tui::Theme;
 use ratatui::{
-    Frame,
     layout::Rect,
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
+    Frame,
 };
 
 pub fn draw_key_input(
@@ -78,50 +77,6 @@ pub fn draw_error(f: &mut Frame, theme: &Theme, message: &str, retryable: bool) 
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme.red)),
     );
-    f.render_widget(para, area);
-}
-
-pub fn draw_files(f: &mut Frame, theme: &Theme, files: &[FileInfo], area: Rect) {
-    let mut lines = Vec::new();
-
-    for file in files.iter().take(8) {
-        let icon = file.status.as_str();
-        let icon_style = match file.status {
-            crate::prompt::FileStatus::Added => theme.green_style(),
-            crate::prompt::FileStatus::Deleted => theme.red_style(),
-            _ => theme.yellow_style(),
-        };
-
-        let add = if file.additions > 0 {
-            format!("+{}", file.additions)
-        } else {
-            "".into()
-        };
-        let del = if file.deletions > 0 {
-            format!("-{}", file.deletions)
-        } else {
-            "".into()
-        };
-
-        lines.push(Line::from(vec![
-            Span::styled(icon, icon_style),
-            Span::raw(" "),
-            Span::styled(&file.path, theme.fg_style()),
-            Span::raw(" "),
-            Span::styled(add, theme.green_style()),
-            Span::raw(" "),
-            Span::styled(del, theme.red_style()),
-        ]));
-    }
-
-    if files.len() > 8 {
-        lines.push(Line::from(Span::styled(
-            format!("  ... +{} more", files.len() - 8),
-            theme.dim_style(),
-        )));
-    }
-
-    let para = Paragraph::new(lines);
     f.render_widget(para, area);
 }
 

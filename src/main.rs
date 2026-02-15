@@ -23,5 +23,10 @@ fn run() -> Result<()> {
     let mut tui: Tui = Tui::new()?;
     let mut app: App = App::new(args)?;
     app.run(&mut tui)?;
+
+    if let Some(result) = app.get_result() {
+        Tui::leave_and_print_history(result);
+    }
+
     Ok(())
 }

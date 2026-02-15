@@ -147,7 +147,10 @@ impl GitRepo {
 
 pub fn commit_with_git_cli(title: &str, body: Option<&str>) -> Result<()> {
     let mut cmd = std::process::Command::new("git");
-    cmd.arg("commit").arg("-m").arg(title);
+    cmd.arg("commit")
+        .arg("-m")
+        .arg(title)
+        .arg("--no-verify");
 
     if let Some(b) = body
         && !b.is_empty()
@@ -155,14 +158,21 @@ pub fn commit_with_git_cli(title: &str, body: Option<&str>) -> Result<()> {
         cmd.arg("-m").arg(b);
     }
 
-    let status = cmd
-        .status()
+    let output = cmd
+        .output()
         .map_err(|e| YetiError::CommitFailed(format!("Failed to run git commit: {}", e)))?;
 
-    if !status.success() {
-        return Err(YetiError::CommitFailed(
-            "Git commit returned non-zero exit code".to_string(),
-        ));
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let msg = if !stderr.is_empty() {
+            stderr.to_string()
+        } else if !stdout.is_empty() {
+            stdout.to_string()
+        } else {
+            "Git commit failed".to_string()
+        };
+        return Err(YetiError::CommitFailed(msg));
     }
 
     Ok(())

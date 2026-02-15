@@ -4,7 +4,7 @@ use crate::config::{self, Config};
 use crate::error::Result;
 use crate::git::{GitRepo, StagedSummary};
 use crate::prompt::{self, FileInfo};
-use crate::tui::{Theme, Tui, draw_error, draw_files, draw_key_input};
+use crate::tui::{Theme, Tui, draw_error, draw_key_input};
 use crossterm::event::{Event, KeyCode};
 use ratatui::{
     Frame,
@@ -18,26 +18,12 @@ use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub enum AppState {
-    Init,
-    ApiKeyInput {
-        input: String,
-        cursor: usize,
-        error: Option<String>,
-    },
-    Generating {
-        branch: String,
-        files: Vec<FileInfo>,
-        generated: String,
-    },
-    Done {
-        message: String,
-        done_at: Instant,
-    },
-    Error {
-        message: String,
-        retryable: bool,
-    },
-    Exit,
+    ApiKeyInput { input: String, cursor: usize, error: Option<String> },
+    Staging { branch: String },
+    Generating { branch: String, files: Vec<FileInfo>, generated: String },
+    Committing { branch: String, files: Vec<FileInfo>, message: String },
+    Done { branch: String, files: Vec<FileInfo>, message: String, done_at: Instant },
+    Error { message: String, retryable: bool },
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +40,13 @@ pub enum AppEvent {
     CommitFailed(String),
 }
 
+pub struct AppResult {
+    pub branch: String,
+    pub files: Vec<FileInfo>,
+    pub message: String,
+    pub dry_run: bool,
+}
+
 pub struct App {
     state: AppState,
     config: Config,
@@ -62,6 +55,7 @@ pub struct App {
     theme: Theme,
     event_rx: Receiver<AppEvent>,
     event_tx: Sender<AppEvent>,
+    result: Option<AppResult>,
 }
 
 impl App {
@@ -71,13 +65,9 @@ impl App {
         let (event_tx, event_rx) = mpsc::channel();
 
         let state = if args.reset_key || api_key.is_none() {
-            AppState::ApiKeyInput {
-                input: String::new(),
-                cursor: 0,
-                error: None,
-            }
+            AppState::ApiKeyInput { input: String::new(), cursor: 0, error: None }
         } else {
-            AppState::Init
+            AppState::Staging { branch: "unknown".into() }
         };
 
         Ok(Self {
@@ -88,18 +78,16 @@ impl App {
             theme: Theme::gruvbox(),
             event_rx,
             event_tx,
+            result: None,
         })
     }
 
     pub fn run(&mut self, tui: &mut Tui) -> Result<()> {
-        self.start_init();
+        self.start_staging();
 
         loop {
-            if matches!(self.state, AppState::Exit) {
-                break;
-            }
             if let AppState::Done { done_at, .. } = &self.state
-                && done_at.elapsed().as_secs() >= 2
+                && done_at.elapsed().as_secs() >= 3
             {
                 break;
             }
@@ -108,7 +96,11 @@ impl App {
                 && let Event::Key(key) = event
                 && key.kind == crossterm::event::KeyEventKind::Press
             {
-                self.handle_key(key.code);
+                match key.code {
+                    KeyCode::Esc => break,
+                    KeyCode::Char('q') | KeyCode::Char('Q') => break,
+                    _ => self.handle_key(key.code),
+                }
             }
 
             while let Ok(event) = self.event_rx.try_recv() {
@@ -121,29 +113,29 @@ impl App {
         Ok(())
     }
 
-    fn start_init(&mut self) {
-        if matches!(self.state, AppState::Init) {
-            let tx = self.event_tx.clone();
-            thread::spawn(move || {
-                if let Err(e) = (|| {
-                    let repo = GitRepo::discover()?;
-                    repo.stage_all()?;
-                    let summary = repo.get_staged_summary()?;
-                    let _ = tx.send(AppEvent::StagingComplete(summary));
-                    Ok::<_, crate::error::YetiError>(())
-                })() {
-                    let _ = tx.send(AppEvent::StagingFailed(e.to_string()));
-                }
-            });
-        }
+    pub fn get_result(&self) -> Option<&AppResult> {
+        self.result.as_ref()
+    }
+
+    fn start_staging(&mut self) {
+        let tx = self.event_tx.clone();
+        thread::spawn(move || {
+            let result = (|| {
+                let repo = GitRepo::discover()?;
+                repo.stage_all()?;
+                repo.get_staged_summary()
+            })();
+
+            match result {
+                Ok(summary) => { let _ = tx.send(AppEvent::StagingComplete(summary)); }
+                Err(e) => { let _ = tx.send(AppEvent::StagingFailed(e.to_string())); }
+            }
+        });
     }
 
     fn start_generation(&mut self, summary: StagedSummary) {
         let Some(api_key) = self.api_key.clone() else {
-            self.state = AppState::Error {
-                message: "No API key".into(),
-                retryable: true,
-            };
+            self.state = AppState::Error { message: "No API key".into(), retryable: true };
             return;
         };
 
@@ -153,8 +145,8 @@ impl App {
         let user_prompt = prompt::build_user_prompt(&branch, &files);
 
         self.state = AppState::Generating {
-            branch,
-            files,
+            branch: branch.clone(),
+            files: files.clone(),
             generated: String::new(),
         };
 
@@ -172,59 +164,30 @@ impl App {
 
     fn handle_key(&mut self, code: KeyCode) {
         match &mut self.state {
-            AppState::ApiKeyInput {
-                input,
-                cursor,
-                error,
-            } => {
+            AppState::ApiKeyInput { input, cursor, error } => {
                 error.take();
                 match code {
-                    KeyCode::Char(c) => {
-                        input.insert(*cursor, c);
-                        *cursor += 1;
-                    }
-                    KeyCode::Backspace if *cursor > 0 => {
-                        input.remove(*cursor - 1);
-                        *cursor -= 1;
-                    }
-                    KeyCode::Delete if *cursor < input.len() => {
-                        input.remove(*cursor);
-                    }
-                    KeyCode::Left if *cursor > 0 => {
-                        *cursor -= 1;
-                    }
-                    KeyCode::Right if *cursor < input.len() => {
-                        *cursor += 1;
-                    }
+                    KeyCode::Char(c) => { input.insert(*cursor, c); *cursor += 1; }
+                    KeyCode::Backspace if *cursor > 0 => { input.remove(*cursor - 1); *cursor -= 1; }
+                    KeyCode::Delete if *cursor < input.len() => { input.remove(*cursor); }
+                    KeyCode::Left if *cursor > 0 => { *cursor -= 1; }
+                    KeyCode::Right if *cursor < input.len() => { *cursor += 1; }
                     KeyCode::Enter if !input.is_empty() => {
                         let _ = self.event_tx.send(AppEvent::ApiKeyEntered(input.clone()));
                     }
-                    KeyCode::Esc => self.state = AppState::Exit,
                     _ => {}
                 }
             }
             AppState::Error { retryable, .. } => match code {
                 KeyCode::Char('r') | KeyCode::Char('R') if *retryable => {
-                    self.state = AppState::Init;
-                    self.start_init();
+                    self.state = AppState::Staging { branch: "unknown".into() };
+                    self.start_staging();
                 }
                 KeyCode::Char('k') | KeyCode::Char('K') => {
-                    self.state = AppState::ApiKeyInput {
-                        input: String::new(),
-                        cursor: 0,
-                        error: None,
-                    };
-                }
-                KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
-                    self.state = AppState::Exit
+                    self.state = AppState::ApiKeyInput { input: String::new(), cursor: 0, error: None };
                 }
                 _ => {}
             },
-            AppState::Generating { .. } | AppState::Done { .. } => {
-                if code == KeyCode::Esc {
-                    self.state = AppState::Exit;
-                }
-            }
             _ => {}
         }
     }
@@ -245,22 +208,17 @@ impl App {
                 if let Some(ref key) = self.api_key {
                     let _ = config::save_api_key(key);
                 }
-                self.state = AppState::Init;
-                self.start_init();
+                self.state = AppState::Staging { branch: "unknown".into() };
+                self.start_staging();
             }
             AppEvent::ApiKeyValidationFailed(err) => {
-                self.state = AppState::ApiKeyInput {
-                    input: String::new(),
-                    cursor: 0,
-                    error: Some(err),
-                };
+                self.state = AppState::ApiKeyInput { input: String::new(), cursor: 0, error: Some(err) };
             }
-            AppEvent::StagingComplete(summary) => self.start_generation(summary),
+            AppEvent::StagingComplete(summary) => {
+                self.start_generation(summary);
+            }
             AppEvent::StagingFailed(err) => {
-                self.state = AppState::Error {
-                    message: err,
-                    retryable: false,
-                };
+                self.state = AppState::Error { message: err, retryable: false };
             }
             AppEvent::GenerationChunk(chunk) => {
                 if let AppState::Generating { generated, .. } = &mut self.state {
@@ -275,119 +233,187 @@ impl App {
                 };
 
                 if self.dry_run {
-                    self.state = AppState::Done {
-                        message,
-                        done_at: Instant::now(),
-                    };
+                    if let AppState::Generating { branch, files, .. } = &self.state {
+                        self.result = Some(AppResult {
+                            branch: branch.clone(),
+                            files: files.clone(),
+                            message: message.clone(),
+                            dry_run: true,
+                        });
+                        self.state = AppState::Done {
+                            branch: branch.clone(),
+                            files: files.clone(),
+                            message,
+                            done_at: Instant::now(),
+                        };
+                    }
                     return;
                 }
 
-                let title_for_commit = title.clone();
-                let body_for_commit = body.clone();
-                let tx = self.event_tx.clone();
-                thread::spawn(move || {
-                    let _ = tx.send(
-                        match crate::git::commit_with_git_cli(
-                            &title_for_commit,
-                            body_for_commit.as_deref(),
-                        ) {
-                            Ok(_) => AppEvent::CommitComplete,
-                            Err(e) => AppEvent::CommitFailed(e.to_string()),
-                        },
-                    );
-                });
+                if let AppState::Generating { branch, files, .. } = &self.state {
+                    let branch_clone = branch.clone();
+                    let files_clone = files.clone();
+                    let message_clone = message.clone();
 
-                self.state = AppState::Done {
-                    message,
-                    done_at: Instant::now(),
-                };
+                    self.state = AppState::Committing {
+                        branch: branch.clone(),
+                        files: files.clone(),
+                        message: message.clone(),
+                    };
+
+                    let title_for_commit = title.clone();
+                    let body_for_commit = body.clone();
+                    let tx = self.event_tx.clone();
+                    thread::spawn(move || {
+                        let _ = tx.send(
+                            match crate::git::commit_with_git_cli(&title_for_commit, body_for_commit.as_deref()) {
+                                Ok(_) => AppEvent::CommitComplete,
+                                Err(e) => AppEvent::CommitFailed(e.to_string()),
+                            }
+                        );
+                    });
+
+                    self.result = Some(AppResult {
+                        branch: branch_clone,
+                        files: files_clone,
+                        message: message_clone,
+                        dry_run: false,
+                    });
+                }
             }
             AppEvent::GenerationFailed(err) => {
-                self.state = AppState::Error {
-                    message: err,
-                    retryable: true,
-                };
+                self.state = AppState::Error { message: err, retryable: true };
+            }
+            AppEvent::CommitComplete => {
+                if let AppState::Committing { branch, files, message } = &self.state {
+                    self.state = AppState::Done {
+                        branch: branch.clone(),
+                        files: files.clone(),
+                        message: message.clone(),
+                        done_at: Instant::now(),
+                    };
+                }
             }
             AppEvent::CommitFailed(err) => {
-                self.state = AppState::Error {
-                    message: err,
-                    retryable: false,
-                };
+                self.state = AppState::Error { message: err, retryable: false };
             }
-            AppEvent::CommitComplete => {}
         }
     }
 
     fn draw(&self, f: &mut Frame) {
         match &self.state {
-            AppState::ApiKeyInput {
-                input,
-                cursor,
-                error,
-            } => {
+            AppState::ApiKeyInput { input, cursor, error } => {
                 draw_key_input(f, &self.theme, input, *cursor, error.as_deref());
             }
-            AppState::Init => {
-                let lines = vec![Line::from(Span::styled(
-                    "staging...",
-                    self.theme.dim_style(),
-                ))];
-                f.render_widget(Paragraph::new(lines), f.area());
-            }
-            AppState::Generating {
-                branch,
-                files,
-                generated,
-            } => {
-                let area = f.area();
-                let files_area = Rect {
-                    x: area.x,
-                    y: area.y,
-                    width: area.width,
-                    height: files.len().min(8) as u16 + 2,
-                };
-                let msg_area = Rect {
-                    x: area.x,
-                    y: files_area.y + files_area.height,
-                    width: area.width,
-                    height: area.height.saturating_sub(files_area.height),
-                };
-
-                draw_files(f, &self.theme, files, files_area);
-
-                let mut lines = vec![
+            AppState::Staging { branch } => {
+                let lines = vec![
+                    Line::from(""),
                     Line::from(vec![
+                        Span::styled("  ", self.theme.fg_style()),
                         Span::styled(branch.as_str(), self.theme.dim_style()),
-                        Span::raw("  "),
-                        Span::styled("generating...", self.theme.accent_style()),
                     ]),
                     Line::from(""),
+                    Line::from(vec![
+                        Span::styled("  staging files...", self.theme.accent_style()),
+                    ]),
                 ];
-                for line in generated.lines().take(5) {
-                    lines.push(Line::from(Span::styled(line, self.theme.fg_style())));
-                }
-                if !generated.is_empty() && !generated.ends_with('\n') {
-                    lines.push(Line::from(Span::styled("_", self.theme.accent_style())));
-                }
-                f.render_widget(Paragraph::new(lines), msg_area);
-            }
-            AppState::Done { message, .. } => {
-                let mut lines = vec![
-                    Line::from(Span::styled(
-                        if self.dry_run { "dry run" } else { "committed" },
-                        self.theme.green_style(),
-                    )),
-                    Line::from(""),
-                ];
-                for line in message.lines() {
-                    lines.push(Line::from(Span::styled(line, self.theme.fg_style())));
-                }
                 f.render_widget(Paragraph::new(lines), f.area());
+            }
+            AppState::Generating { branch, files, generated } => {
+                self.draw_main(f, branch, files, generated, "generating...");
+            }
+            AppState::Committing { branch, files, message } => {
+                self.draw_main(f, branch, files, message, "committing...");
+            }
+            AppState::Done { branch, files, message, .. } => {
+                let status = if self.dry_run { "dry run" } else { "committed" };
+                self.draw_main(f, branch, files, message, status);
             }
             AppState::Error { message, retryable } => {
                 draw_error(f, &self.theme, message, *retryable);
             }
-            AppState::Exit => {}
         }
+    }
+
+    fn draw_main(&self, f: &mut Frame, branch: &str, files: &[FileInfo], message: &str, status: &str) {
+        let area = f.area();
+        let files_height = (files.len().min(10) + 3) as u16;
+        let files_area = Rect { x: area.x, y: area.y, width: area.width, height: files_height };
+        let msg_area = Rect { x: area.x, y: files_height, width: area.width, height: area.height.saturating_sub(files_height) };
+
+        let total_add: usize = files.iter().map(|f| f.additions).sum();
+        let total_del: usize = files.iter().map(|f| f.deletions).sum();
+
+        let mut header = vec![
+            Span::styled("  ", self.theme.fg_style()),
+            Span::styled(branch, self.theme.dim_style()),
+            Span::styled("  ", self.theme.fg_style()),
+            Span::styled(format!("{} files", files.len()), self.theme.fg_style()),
+            Span::styled("  ", self.theme.fg_style()),
+            Span::styled(format!("+{}", total_add), self.theme.green_style()),
+            Span::styled(" ", self.theme.fg_style()),
+            Span::styled(format!("-{}", total_del), self.theme.red_style()),
+        ];
+
+        if status == "committed" {
+            header.push(Span::styled("  ", self.theme.fg_style()));
+            header.push(Span::styled("✓", self.theme.green_style()));
+        }
+
+        let mut file_lines = vec![Line::from(header), Line::from("")];
+
+        for file in files.iter().take(10) {
+            let icon = file.status.as_str();
+            let icon_style = match file.status {
+                crate::prompt::FileStatus::Added => self.theme.green_style(),
+                crate::prompt::FileStatus::Deleted => self.theme.red_style(),
+                _ => self.theme.yellow_style(),
+            };
+
+            let add_s = if file.additions > 0 { format!("+{}", file.additions) } else { String::new() };
+            let del_s = if file.deletions > 0 { format!("-{}", file.deletions) } else { String::new() };
+
+            file_lines.push(Line::from(vec![
+                Span::styled("  ", self.theme.fg_style()),
+                Span::styled(icon, icon_style),
+                Span::styled(" ", self.theme.fg_style()),
+                Span::styled(&file.path, self.theme.fg_style()),
+                Span::styled(" ", self.theme.fg_style()),
+                Span::styled(add_s, self.theme.green_style()),
+                Span::styled(" ", self.theme.fg_style()),
+                Span::styled(del_s, self.theme.red_style()),
+            ]));
+        }
+
+        if files.len() > 10 {
+            file_lines.push(Line::from(vec![
+                Span::styled("  ", self.theme.fg_style()),
+                Span::styled(format!("... {} more", files.len() - 10), self.theme.dim_style()),
+            ]));
+        }
+
+        f.render_widget(Paragraph::new(file_lines), files_area);
+
+        let mut msg_lines = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  ", self.theme.fg_style()),
+                Span::styled(status, if status == "committed" || status == "dry run" {
+                    self.theme.green_style()
+                } else {
+                    self.theme.accent_style()
+                }),
+            ]),
+            Line::from(""),
+        ];
+
+        for line in message.lines() {
+            msg_lines.push(Line::from(vec![
+                Span::styled("  ", self.theme.fg_style()),
+                Span::styled(line, self.theme.fg_style()),
+            ]));
+        }
+
+        f.render_widget(Paragraph::new(msg_lines), msg_area);
     }
 }

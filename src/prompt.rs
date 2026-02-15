@@ -88,14 +88,3 @@ pub enum FileStatus {
     Deleted,
     Renamed,
 }
-
-impl FileStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            FileStatus::Added => "A",
-            FileStatus::Modified => "M",
-            FileStatus::Deleted => "D",
-            FileStatus::Renamed => "R",
-        }
-    }
-}

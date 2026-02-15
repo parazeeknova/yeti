@@ -52,48 +52,91 @@ impl Tui {
         let total_add: usize = result.files.iter().map(|f| f.additions).sum();
         let total_del: usize = result.files.iter().map(|f| f.deletions).sum();
 
+        let dim = "\x1b[38;5;246m";
+        let green = "\x1b[38;5;142m";
+        let red = "\x1b[38;5;167m";
+        let yellow = "\x1b[38;5;214m";
+        let orange = "\x1b[38;5;208m";
+        let blue = "\x1b[38;5;109m";
+        let bold = "\x1b[1m";
+        let reset = "\x1b[0m";
+
         println!();
 
         println!(
-            "\x1b[38;5;180m{}\x1b[0m  \x1b[38;5;144m{} files\x1b[0m  \x1b[38;5;142m+{}\x1b[0m \x1b[38;5;167m-{}\x1b[0m",
-            result.branch,
-            result.files.len(),
-            total_add,
-            total_del
+            "  {}{}{}{}  {}{} files{}  {}+{}{}  {}-{}{}",
+            bold, blue, result.branch, reset,
+            dim, result.files.len(), reset,
+            green, total_add, reset,
+            red, total_del, reset
         );
 
+        println!("  {}{}{}", dim, "─".repeat(50), reset);
+
+        let max_path_len = result.files.iter().map(|f| f.path.len()).max().unwrap_or(0).min(40);
+
         for file in result.files.iter().take(10) {
-            let icon = file.status.as_str();
-            let icon_color = match file.status {
-                crate::prompt::FileStatus::Added => "142",
-                crate::prompt::FileStatus::Deleted => "167",
-                _ => "214",
+            let (icon, icon_color) = match file.status {
+                crate::prompt::FileStatus::Added => ("A", green),
+                crate::prompt::FileStatus::Deleted => ("D", red),
+                crate::prompt::FileStatus::Renamed => ("R", yellow),
+                crate::prompt::FileStatus::Modified => ("M", orange),
             };
 
-            let add_s = if file.additions > 0 { format!("\x1b[38;5;142m+{}\x1b[0m", file.additions) } else { String::new() };
-            let del_s = if file.deletions > 0 { format!("\x1b[38;5;167m-{}\x1b[0m", file.deletions) } else { String::new() };
+            let path_display = if file.path.len() > 40 {
+                format!("...{}", &file.path[file.path.len() - 37..])
+            } else {
+                format!("{:width$}", file.path, width = max_path_len)
+            };
+
+            let add_s = if file.additions > 0 {
+                format!("{}+{}{}", green, file.additions, reset)
+            } else {
+                format!("{}   {}", dim, reset)
+            };
+
+            let del_s = if file.deletions > 0 {
+                format!("{}-{}{}", red, file.deletions, reset)
+            } else {
+                String::new()
+            };
 
             println!(
-                "  \x1b[38;5;{}m{}\x1b[0m {} {} {}",
-                icon_color, icon, file.path, add_s, del_s
+                "  {}{}{}  {}  {} {}",
+                icon_color, icon, reset,
+                path_display,
+                add_s, del_s
             );
         }
 
         if result.files.len() > 10 {
-            println!("  \x1b[38;5;246m... {} more\x1b[0m", result.files.len() - 10);
+            println!(
+                "  {}  ... {} more{}",
+                dim, result.files.len() - 10, reset
+            );
         }
 
         println!();
 
-        if result.dry_run {
-            println!("\x1b[38;5;214mdry run\x1b[0m");
+        let status = if result.dry_run {
+            format!("{}dry run{}", yellow, reset)
         } else {
-            println!("\x1b[38;5;142mcommitted\x1b[0m");
-        }
+            format!("{}committed{}", green, reset)
+        };
 
+        println!("  {}", status);
         println!();
+
+        let mut first = true;
         for line in result.message.lines() {
-            println!("  {}", line);
+            if first {
+                println!("  {}{}{}", bold, line, reset);
+                first = false;
+            } else if line.is_empty() {
+                println!();
+            } else {
+                println!("  {}", line);
+            }
         }
 
         println!();

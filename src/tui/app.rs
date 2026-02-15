@@ -337,18 +337,20 @@ impl App {
 
     fn draw_main(&self, f: &mut Frame, branch: &str, files: &[FileInfo], message: &str, status: &str) {
         let area = f.area();
-        let files_height = (files.len().min(10) + 3) as u16;
+        let files_height = (files.len().min(10) + 4) as u16;
         let files_area = Rect { x: area.x, y: area.y, width: area.width, height: files_height };
         let msg_area = Rect { x: area.x, y: files_height, width: area.width, height: area.height.saturating_sub(files_height) };
 
         let total_add: usize = files.iter().map(|f| f.additions).sum();
         let total_del: usize = files.iter().map(|f| f.deletions).sum();
 
+        let separator = "─".repeat(area.width as usize).chars().take(area.width as usize).collect::<String>();
+
         let mut header = vec![
             Span::styled("  ", self.theme.fg_style()),
-            Span::styled(branch, self.theme.dim_style()),
+            Span::styled(branch, self.theme.accent_style()),
             Span::styled("  ", self.theme.fg_style()),
-            Span::styled(format!("{} files", files.len()), self.theme.fg_style()),
+            Span::styled(format!("{} files", files.len()), self.theme.dim_style()),
             Span::styled("  ", self.theme.fg_style()),
             Span::styled(format!("+{}", total_add), self.theme.green_style()),
             Span::styled(" ", self.theme.fg_style()),
@@ -356,29 +358,48 @@ impl App {
         ];
 
         if status == "committed" {
-            header.push(Span::styled("  ", self.theme.fg_style()));
-            header.push(Span::styled("✓", self.theme.green_style()));
+            header.push(Span::styled("    ", self.theme.fg_style()));
+            header.push(Span::styled("done", self.theme.green_style()));
         }
 
-        let mut file_lines = vec![Line::from(header), Line::from("")];
+        let mut file_lines = vec![
+            Line::from(header),
+            Line::from(Span::styled(separator.clone(), self.theme.dim_style())),
+        ];
+
+        let max_path_len = files.iter().map(|f| f.path.len()).max().unwrap_or(0).min(40);
 
         for file in files.iter().take(10) {
-            let icon = file.status.as_str();
-            let icon_style = match file.status {
-                crate::prompt::FileStatus::Added => self.theme.green_style(),
-                crate::prompt::FileStatus::Deleted => self.theme.red_style(),
-                _ => self.theme.yellow_style(),
+            let (icon, icon_style) = match file.status {
+                crate::prompt::FileStatus::Added => ("A", self.theme.green_style()),
+                crate::prompt::FileStatus::Deleted => ("D", self.theme.red_style()),
+                crate::prompt::FileStatus::Renamed => ("R", self.theme.yellow_style()),
+                crate::prompt::FileStatus::Modified => ("M", self.theme.yellow_style()),
             };
 
-            let add_s = if file.additions > 0 { format!("+{}", file.additions) } else { String::new() };
-            let del_s = if file.deletions > 0 { format!("-{}", file.deletions) } else { String::new() };
+            let path_display = if file.path.len() > 40 {
+                format!("...{}", &file.path[file.path.len() - 37..])
+            } else {
+                format!("{:width$}", file.path, width = max_path_len)
+            };
+
+            let add_s = if file.additions > 0 {
+                format!("+{}", file.additions)
+            } else {
+                String::new()
+            };
+            let del_s = if file.deletions > 0 {
+                format!("-{}", file.deletions)
+            } else {
+                String::new()
+            };
 
             file_lines.push(Line::from(vec![
                 Span::styled("  ", self.theme.fg_style()),
                 Span::styled(icon, icon_style),
-                Span::styled(" ", self.theme.fg_style()),
-                Span::styled(&file.path, self.theme.fg_style()),
-                Span::styled(" ", self.theme.fg_style()),
+                Span::styled("  ", self.theme.fg_style()),
+                Span::styled(path_display, self.theme.fg_style()),
+                Span::styled("  ", self.theme.fg_style()),
                 Span::styled(add_s, self.theme.green_style()),
                 Span::styled(" ", self.theme.fg_style()),
                 Span::styled(del_s, self.theme.red_style()),
@@ -394,24 +415,37 @@ impl App {
 
         f.render_widget(Paragraph::new(file_lines), files_area);
 
+        let status_style = if status == "committed" || status == "dry run" {
+            self.theme.green_style()
+        } else {
+            self.theme.accent_style()
+        };
+
         let mut msg_lines = vec![
             Line::from(""),
             Line::from(vec![
                 Span::styled("  ", self.theme.fg_style()),
-                Span::styled(status, if status == "committed" || status == "dry run" {
-                    self.theme.green_style()
-                } else {
-                    self.theme.accent_style()
-                }),
+                Span::styled(status, status_style),
             ]),
             Line::from(""),
         ];
 
+        let mut first = true;
         for line in message.lines() {
-            msg_lines.push(Line::from(vec![
-                Span::styled("  ", self.theme.fg_style()),
-                Span::styled(line, self.theme.fg_style()),
-            ]));
+            if first {
+                msg_lines.push(Line::from(vec![
+                    Span::styled("  ", self.theme.fg_style()),
+                    Span::styled(line, self.theme.accent_style()),
+                ]));
+                first = false;
+            } else if line.is_empty() {
+                msg_lines.push(Line::from(""));
+            } else {
+                msg_lines.push(Line::from(vec![
+                    Span::styled("  ", self.theme.fg_style()),
+                    Span::styled(line, self.theme.fg_style()),
+                ]));
+            }
         }
 
         f.render_widget(Paragraph::new(msg_lines), msg_area);

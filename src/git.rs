@@ -1,6 +1,6 @@
 use crate::error::{Result, YetiError};
 use crate::prompt::{FileInfo, FileStatus};
-use git2::{DiffOptions, Repository, Status, StatusOptions};
+use git2::{DiffOptions, Repository};
 
 pub struct GitRepo {
     repo: Repository,
@@ -38,71 +38,80 @@ impl GitRepo {
     }
 
     fn get_staged_files(&self) -> Result<Vec<FileInfo>> {
-        let mut opts = StatusOptions::new();
-        opts.include_untracked(true)
-            .recurse_untracked_dirs(true)
-            .include_ignored(false)
-            .include_unmodified(false);
+        let head_tree = self.repo.revparse_single("HEAD").ok().and_then(|o| o.peel_to_tree().ok());
 
-        let statuses = self.repo.statuses(Some(&mut opts))?;
+        let mut opts = DiffOptions::new();
+        opts.include_untracked(true).recurse_untracked_dirs(true);
+
+        let diff = if let Some(tree) = &head_tree {
+            self.repo.diff_tree_to_index(Some(tree), None, Some(&mut opts))?
+        } else {
+            self.repo.diff_tree_to_index(None, None, Some(&mut opts))?
+        };
 
         let mut files = Vec::new();
 
-        for entry in statuses.iter() {
-            let path = match entry.path() {
-                Some(p) => p.to_string(),
-                None => continue,
-            };
+        diff.foreach(
+            &mut |delta, _| {
+                let path = delta.new_file().path().map(|p| p.to_string_lossy().to_string());
+                if let Some(path) = path {
+                    let status = match delta.status() {
+                        git2::Delta::Added => FileStatus::Added,
+                        git2::Delta::Deleted => FileStatus::Deleted,
+                        git2::Delta::Renamed => FileStatus::Renamed,
+                        _ => FileStatus::Modified,
+                    };
 
-            let status = entry.status();
+                    files.push(FileInfo {
+                        path,
+                        additions: 0,
+                        deletions: 0,
+                        diff: String::new(),
+                        status,
+                    });
+                }
+                true
+            },
+            None,
+            None,
+            None,
+        )?;
 
-            let file_status = if status.contains(Status::INDEX_NEW)
-                || status.contains(Status::WT_NEW)
-            {
-                FileStatus::Added
-            } else if status.contains(Status::INDEX_DELETED) || status.contains(Status::WT_DELETED)
-            {
-                FileStatus::Deleted
-            } else if status.contains(Status::INDEX_RENAMED) || status.contains(Status::WT_RENAMED)
-            {
-                FileStatus::Renamed
-            } else {
-                FileStatus::Modified
-            };
-
-            let (additions, deletions, diff) = self.get_file_diff(&path, file_status)?;
-
-            files.push(FileInfo {
-                path,
-                additions,
-                deletions,
-                diff,
-                status: file_status,
-            });
+        for file in &mut files {
+            let (add, del, diff_text) = self.get_file_stats(&file.path, file.status)?;
+            file.additions = add;
+            file.deletions = del;
+            file.diff = diff_text;
         }
 
         Ok(files)
     }
 
-    fn get_file_diff(&self, path: &str, status: FileStatus) -> Result<(usize, usize, String)> {
+    fn get_file_stats(&self, path: &str, status: FileStatus) -> Result<(usize, usize, String)> {
+        let head_tree = self.repo.revparse_single("HEAD").ok().and_then(|o| o.peel_to_tree().ok());
+
+        let mut opts = DiffOptions::new();
+        opts.pathspec(path);
+
         let diff = match status {
             FileStatus::Added => {
-                let obj = self.repo.revparse_single("HEAD").ok();
-                let old_tree = obj.and_then(|o| o.peel_to_tree().ok());
-
                 let mut opts = DiffOptions::new();
                 opts.pathspec(path);
                 opts.include_untracked(true);
                 opts.recurse_untracked_dirs(true);
 
-                self.repo
-                    .diff_tree_to_workdir(old_tree.as_ref(), Some(&mut opts))?
+                if let Some(tree) = &head_tree {
+                    self.repo.diff_tree_to_workdir(Some(tree), Some(&mut opts))?
+                } else {
+                    self.repo.diff_tree_to_workdir(None, Some(&mut opts))?
+                }
             }
             _ => {
-                let mut opts = DiffOptions::new();
-                opts.pathspec(path);
-
-                self.repo.diff_index_to_workdir(None, Some(&mut opts))?
+                if let Some(tree) = &head_tree {
+                    self.repo.diff_tree_to_workdir(Some(tree), Some(&mut opts))?
+                } else {
+                    self.repo.diff_tree_to_workdir(None, Some(&mut opts))?
+                }
             }
         };
 
@@ -111,21 +120,16 @@ impl GitRepo {
         let mut diff_text = String::new();
 
         diff.print(git2::DiffFormat::Patch, |_delta, _, line| {
-            let prefix = match line.origin() {
-                '+' => {
-                    additions += 1;
-                    '+'
-                }
-                '-' => {
-                    deletions += 1;
-                    '-'
-                }
-                _ => ' ',
-            };
+            match line.origin() {
+                '+' => additions += 1,
+                '-' => deletions += 1,
+                _ => {}
+            }
 
             if diff_text.len() < 2000
                 && let Ok(text) = std::str::from_utf8(line.content())
             {
+                let prefix = line.origin();
                 diff_text.push_str(&format!("{}{}", prefix, text));
             }
 
@@ -137,9 +141,7 @@ impl GitRepo {
 
     pub fn stage_all(&self) -> Result<()> {
         let mut index = self.repo.index()?;
-
         index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
-
         index.write()?;
         Ok(())
     }

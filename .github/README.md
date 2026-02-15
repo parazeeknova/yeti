@@ -1,34 +1,35 @@
-<div align="center">
+<div>
 
-  <img src="assets/yeti.png" alt="Yeti" width="95%">
-  <h2>yeti: domesticate your diff</h2>
+  <img src="assets/yeti.png" alt="Yeti" width="100%">
 
 </div>
 
-A beast that camps between your working directory and Git, sniffing through messy diffs and leaving behind clean, intentional history.
+<h2>yeti: domesticate your diff</h2>
 
-### Your Mess
+a beast that camps between your working directory and Git, sniffing through messy diffs and leaving behind clean, intentional history.
 
-You panic-stage everything at 2 AM and type "misc fixes". Your future self hates you.
+### your mess
 
-### The Yeti Way
+you panic-stage everything at 2 AM and type "misc fixes". Your future self hates you.
 
-Run `yeti`. It studies your changes, crafts a sharp conventional commit like `feat(home): add homepage layout and routing`, shows you exactly what it thinks happened, and only commits after you nod in approval.
+### the yeti way
 
-### Claws
+run `yeti`. it studies your changes, crafts a sharp conventional commit like `feat(home): add homepage layout and routing`, shows you exactly what it thinks happened, and only commits after you nod in approval.
+
+### claws
 
 | Command | What It Does |
 |---------|--------------|
-| `yeti` | Single intelligent commit from your current mess |
-| `yeti compose` | Split sprawling chaos into logical chunks |
-| `yeti branch` | When your changes clearly wandered off the mountain |
-| `yeti amend` | Clean up last night's regret |
-| `yeti plan` | Preview how your diff should be organized |
+| `yeti` | single intelligent commit from your current mess |
+| `yeti compose` | split sprawling chaos into logical chunks |
+| `yeti branch` | when your changes clearly wandered off the mountain |
+| `yeti amend` | clean up last night's regret |
+| `yeti plan` | preview how your diff should be organized |
 
-### Rules
+### rules
 
-- No auto-push
-- No silent rewrites
-- No pretending to be Git
-- Just cold, clean history you won't be embarrassed by
+- no auto-push
+- no silent rewrites
+- no pretending to be Git
+- just cold, clean history you won't be embarrassed by
 

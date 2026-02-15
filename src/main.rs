@@ -19,11 +19,11 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-const OLLAMA_SYSTEM_PROMPT: &str = "You are Yeet, a local git assistant. Generate only a valid conventional commit message with a concise title and a short explanatory body.";
+const OLLAMA_SYSTEM_PROMPT: &str = "You are Yeti, a local git assistant. Return only a conventional commit message: first line title (max 72 chars), then optional short body. No thinking tags, no explanations, no markdown fences.";
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "yeet",
+    name = "yeti",
     version,
     about = "Generate intentional commits with local Ollama"
 )]
@@ -69,7 +69,7 @@ impl Ui {
         match self {
             Ui::Tui(tui) => tui.draw_status(text),
             Ui::Plain => {
-                println!("[yeet] {text}");
+                println!("[yeti] {text}");
                 Ok(())
             }
         }
@@ -119,7 +119,7 @@ impl Tui {
             let p = Paragraph::new(text).block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Yeet Progress"),
+                    .title("Yeti Progress"),
             );
             f.render_widget(p, chunks[0]);
         })?;
@@ -138,7 +138,7 @@ impl Tui {
                 let p = Paragraph::new(prompt.as_str()).block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title("Yeet Confirmation"),
+                        .title("Yeti Confirmation"),
                 );
                 f.render_widget(p, chunks[0]);
             })?;
@@ -173,7 +173,7 @@ impl Tui {
                     .split(f.area());
 
                 let header = Paragraph::new("Select Ollama model (↑/↓, Enter)")
-                    .block(Block::default().borders(Borders::ALL).title("Yeet"));
+                    .block(Block::default().borders(Borders::ALL).title("Yeti"));
                 f.render_widget(header, chunks[0]);
 
                 let items = models
@@ -506,49 +506,108 @@ Changed files:
 }
 
 fn sanitize_message(raw: &str, summary: &ChangeSummary) -> GeneratedMessage {
-    let lines = raw
+    let cleaned = strip_reasoning_artifacts(raw);
+    let lines = cleaned
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty())
+        .filter(|l| !l.starts_with('#'))
+        .filter(|l| !l.starts_with("```"))
         .collect::<Vec<_>>();
 
-    let fallback = || {
-        let scope = summary
-            .files
-            .first()
-            .and_then(|f| f.split('/').next())
-            .unwrap_or("repo");
-        let title = format!("chore({scope}): update {} files", summary.files.len());
-        let body = format!("Staged updates on branch {}.", summary.branch);
-        GeneratedMessage { title, body }
-    };
-
+    let fallback = build_fallback_message(summary);
     if lines.is_empty() {
-        return fallback();
+        return fallback;
     }
 
-    let mut title = lines[0].to_string();
+    let title = lines
+        .iter()
+        .find(|l| looks_like_title(l))
+        .map(|l| l.to_string())
+        .unwrap_or_else(|| lines[0].to_string());
+
+    let mut title = if looks_like_title(&title) {
+        title
+    } else {
+        format!("{} {}", fallback.title, title)
+    };
+    title = title.split_whitespace().collect::<Vec<_>>().join(" ");
     if title.len() > 72 {
         title.truncate(72);
     }
-    if !title.contains(':') {
-        let scope = summary
-            .files
-            .first()
-            .and_then(|f| f.split('/').next())
-            .unwrap_or("repo");
-        title = format!("chore({scope}): {title}");
-        if title.len() > 72 {
-            title.truncate(72);
-        }
+    if !looks_like_title(&title) {
+        title = fallback.title.clone();
     }
 
-    let body = if lines.len() > 1 {
-        lines[1..].join("\n")
+    let mut body_lines = lines
+        .into_iter()
+        .filter(|l| l != &title)
+        .filter(|l| l.chars().any(|c| c.is_alphabetic()))
+        .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|l| l.len() > 10)
+        .collect::<Vec<_>>();
+    body_lines.dedup();
+    body_lines.truncate(3);
+
+    let body = if body_lines.is_empty() {
+        fallback.body
     } else {
-        format!("Updates staged files on branch {}.", summary.branch)
+        body_lines.join(
+            "
+",
+        )
     };
 
+    GeneratedMessage { title, body }
+}
+
+fn strip_reasoning_artifacts(raw: &str) -> String {
+    let mut text = raw.replace("<think>", "").replace("</think>", "");
+    if let Some(idx) = text.rfind("</think>") {
+        text = text[(idx + "</think>".len())..].to_string();
+    }
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .filter(|l| !l.starts_with("System instructions:"))
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        )
+}
+
+fn looks_like_title(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    let types = [
+        "feat", "fix", "refactor", "docs", "test", "chore", "perf", "ci", "build", "style",
+        "revert",
+    ];
+    let has_type = types
+        .iter()
+        .any(|t| lower.starts_with(&format!("{t}:")) || lower.starts_with(&format!("{t}(")));
+    has_type && line.contains(':') && line.len() <= 72
+}
+
+fn build_fallback_message(summary: &ChangeSummary) -> GeneratedMessage {
+    let scope = summary
+        .files
+        .first()
+        .and_then(|f| f.split('/').next())
+        .unwrap_or("repo");
+    let kind = if summary.files.iter().all(|f| f.ends_with(".md")) {
+        "docs"
+    } else if summary
+        .files
+        .iter()
+        .any(|f| f.contains("test") || f.contains("spec"))
+    {
+        "test"
+    } else {
+        "chore"
+    };
+    let title = format!("{kind}({scope}): update {} files", summary.files.len());
+    let body = format!("Staged updates on branch {}.", summary.branch);
     GeneratedMessage { title, body }
 }
 
@@ -567,17 +626,30 @@ fn commit_with_git(msg: &GeneratedMessage) -> Result<()> {
 
 fn config_path() -> Result<PathBuf> {
     let base = dirs::config_dir().context("unable to locate config directory")?;
+    Ok(base.join("yeti").join("config.toml"))
+}
+
+fn legacy_config_path() -> Result<PathBuf> {
+    let base = dirs::config_dir().context("unable to locate config directory")?;
     Ok(base.join("yeet").join("config.toml"))
 }
 
 fn load_config() -> Result<AppConfig> {
     let path = config_path()?;
-    if !path.exists() {
-        return Ok(AppConfig::default());
+    if path.exists() {
+        let text = fs::read_to_string(&path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        return Ok(toml::from_str(&text).unwrap_or_default());
     }
-    let text =
-        fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
-    Ok(toml::from_str(&text).unwrap_or_default())
+
+    let legacy_path = legacy_config_path()?;
+    if legacy_path.exists() {
+        let text = fs::read_to_string(&legacy_path)
+            .with_context(|| format!("failed to read {}", legacy_path.display()))?;
+        return Ok(toml::from_str(&text).unwrap_or_default());
+    }
+
+    Ok(AppConfig::default())
 }
 
 fn save_config(config: &AppConfig) -> Result<()> {

@@ -2,10 +2,15 @@
 name = "yeti"
 version = "0.1.0"
 edition = "2024"
+default-run = "yeti"
+
+[[bin]]
+name = "yeti"
+path = "src/main.rs"
 
 [[bin]]
 name = "yeet"
-path = "src/main.rs"
+path = "src/bin/yeet.rs"
 
 [dependencies]
 anyhow = "1.0.95"

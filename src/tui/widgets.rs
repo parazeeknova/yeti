@@ -5,211 +5,124 @@ use ratatui::{
     layout::Rect,
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph},
 };
 
-pub struct FileList<'a> {
-    files: &'a [FileInfo],
-    total_additions: usize,
-    total_deletions: usize,
-    theme: &'a Theme,
-}
+pub fn draw_key_input(
+    f: &mut Frame,
+    theme: &Theme,
+    input: &str,
+    cursor: usize,
+    error: Option<&str>,
+) {
+    let area = centered_rect(50, 30, f.area());
+    f.render_widget(Clear, area);
 
-impl<'a> FileList<'a> {
-    pub fn new(
-        files: &'a [FileInfo],
-        total_additions: usize,
-        total_deletions: usize,
-        theme: &'a Theme,
-    ) -> Self {
-        Self {
-            files,
-            total_additions,
-            total_deletions,
-            theme,
-        }
-    }
-
-    pub fn render(self, f: &mut Frame, area: Rect) {
-        let items: Vec<ListItem> = self
-            .files
-            .iter()
-            .map(|file| {
-                let status_icon = file.status.as_str();
-                let status_style = match file.status {
-                    crate::prompt::FileStatus::Added => self.theme.added_style(),
-                    crate::prompt::FileStatus::Deleted => self.theme.deleted_style(),
-                    crate::prompt::FileStatus::Modified | crate::prompt::FileStatus::Renamed => {
-                        Style::default().fg(ratatui::style::Color::Yellow)
-                    }
-                };
-
-                let additions = if file.additions > 0 {
-                    format!("+{}", file.additions)
-                } else {
-                    String::new()
-                };
-                let deletions = if file.deletions > 0 {
-                    format!("-{}", file.deletions)
-                } else {
-                    String::new()
-                };
-
-                let line = Line::from(vec![
-                    Span::styled(format!("{} ", status_icon), status_style),
-                    Span::styled(&file.path, self.theme.normal_style()),
-                    Span::raw(" "),
-                    Span::styled(additions, self.theme.added_style()),
-                    Span::raw(" "),
-                    Span::styled(deletions, self.theme.deleted_style()),
-                ]);
-
-                ListItem::new(line)
-            })
-            .collect();
-
-        let title = format!(
-            "STAGED FILES ({} files)    +{} -{}",
-            self.files.len(),
-            self.total_additions,
-            self.total_deletions
-        );
-
-        let list = List::new(items)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(Span::styled(title, self.theme.title_style()))
-                    .border_style(Style::default().fg(self.theme.border)),
-            )
-            .highlight_style(Style::default().add_modifier(ratatui::style::Modifier::REVERSED));
-
-        f.render_widget(list, area);
-    }
-}
-
-pub struct ErrorPopup<'a> {
-    title: &'a str,
-    message: &'a str,
-    theme: &'a Theme,
-}
-
-impl<'a> ErrorPopup<'a> {
-    pub fn new(title: &'a str, message: &'a str, theme: &'a Theme) -> Self {
-        Self {
-            title,
-            message,
-            theme,
-        }
-    }
-
-    pub fn render(self, f: &mut Frame, area: Rect) {
-        let popup_area = centered_rect(60, 40, area);
-
-        f.render_widget(Clear, popup_area);
-
-        let text = vec![
-            Line::from(""),
-            Line::from(Span::styled(self.message, self.theme.error_style())),
-            Line::from(""),
-            Line::from(Span::styled(
-                "[R] Retry    [K] Update Key    [Q] Quit",
-                self.theme.dim_style(),
-            )),
-        ];
-
-        let paragraph = Paragraph::new(text).block(
-            Block::default()
-                .title(Span::styled(
-                    format!(" {} ", self.title),
-                    self.theme.error_style(),
-                ))
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(self.theme.error)),
-        );
-
-        f.render_widget(paragraph, popup_area);
-    }
-}
-
-pub struct KeyInputPopup<'a> {
-    input: &'a str,
-    theme: &'a Theme,
-    cursor_pos: usize,
-    error: Option<&'a str>,
-}
-
-impl<'a> KeyInputPopup<'a> {
-    pub fn new(
-        input: &'a str,
-        theme: &'a Theme,
-        cursor_pos: usize,
-        error: Option<&'a str>,
-    ) -> Self {
-        Self {
-            input,
-            theme,
-            cursor_pos,
-            error,
-        }
-    }
-
-    pub fn render(self, f: &mut Frame, area: Rect) {
-        let popup_area = centered_rect(70, 50, area);
-
-        f.render_widget(Clear, popup_area);
-
-        let mut text = vec![
-            Line::from(""),
-            Line::from("Enter your Cerebras API key:"),
-            Line::from(""),
-        ];
-
-        let masked: String = if self.input.is_empty() {
-            "█".to_string()
+    let masked = if input.is_empty() {
+        "_".into()
+    } else {
+        let stars: String = "*".repeat(input.len());
+        let c = cursor.min(input.len());
+        if c < input.len() {
+            format!("{}_", &stars[..c])
         } else {
-            let stars: String = "*".repeat(self.input.len());
-            let cursor_offset = self.cursor_pos.min(self.input.len());
-            if cursor_offset < self.input.len() {
-                format!("{}█{}", &stars[..cursor_offset], &stars[cursor_offset..])
-            } else {
-                format!("{}█", stars)
-            }
+            format!("{}_", stars)
+        }
+    };
+
+    let mut lines = vec![
+        Line::from(Span::styled("API Key", theme.accent_style())),
+        Line::from(""),
+        Line::from(Span::styled(masked, theme.fg_style())),
+    ];
+
+    if let Some(e) = error {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(e, theme.red_style())));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "cloud.cerebras.ai  ·  Enter to save  ·  Esc to cancel",
+        theme.dim_style(),
+    )));
+
+    let para = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.dim)),
+    );
+    f.render_widget(para, area);
+}
+
+pub fn draw_error(f: &mut Frame, theme: &Theme, message: &str, retryable: bool) {
+    let area = centered_rect(50, 25, f.area());
+    f.render_widget(Clear, area);
+
+    let mut lines = vec![
+        Line::from(Span::styled("Error", theme.red_style())),
+        Line::from(""),
+        Line::from(Span::styled(message, theme.fg_style())),
+        Line::from(""),
+    ];
+
+    let hint = if retryable {
+        "R to retry  ·  K for new key  ·  Q to quit"
+    } else {
+        "Q to quit"
+    };
+    lines.push(Line::from(Span::styled(hint, theme.dim_style())));
+
+    let para = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme.red)),
+    );
+    f.render_widget(para, area);
+}
+
+pub fn draw_files(f: &mut Frame, theme: &Theme, files: &[FileInfo], area: Rect) {
+    let mut lines = Vec::new();
+
+    for file in files.iter().take(8) {
+        let icon = file.status.as_str();
+        let icon_style = match file.status {
+            crate::prompt::FileStatus::Added => theme.green_style(),
+            crate::prompt::FileStatus::Deleted => theme.red_style(),
+            _ => theme.yellow_style(),
         };
 
-        text.push(Line::from(Span::styled(
-            format!("  {}", masked),
-            self.theme.normal_style(),
-        )));
-        text.push(Line::from(""));
+        let add = if file.additions > 0 {
+            format!("+{}", file.additions)
+        } else {
+            "".into()
+        };
+        let del = if file.deletions > 0 {
+            format!("-{}", file.deletions)
+        } else {
+            "".into()
+        };
 
-        if let Some(err) = self.error {
-            text.push(Line::from(Span::styled(
-                format!("Error: {}", err),
-                self.theme.error_style(),
-            )));
-            text.push(Line::from(""));
-        }
-
-        text.push(Line::from(Span::styled(
-            "Get your key at: cloud.cerebras.ai",
-            self.theme.dim_style(),
-        )));
-        text.push(Line::from(""));
-        text.push(Line::from(Span::styled(
-            "[Enter] Save & Continue    [Esc] Cancel",
-            self.theme.dim_style(),
-        )));
-
-        let paragraph = Paragraph::new(text).block(
-            Block::default()
-                .title(Span::styled(" YETI - Setup ", self.theme.title_style()))
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(self.theme.border_focused)),
-        );
-
-        f.render_widget(paragraph, popup_area);
+        lines.push(Line::from(vec![
+            Span::styled(icon, icon_style),
+            Span::raw(" "),
+            Span::styled(&file.path, theme.fg_style()),
+            Span::raw(" "),
+            Span::styled(add, theme.green_style()),
+            Span::raw(" "),
+            Span::styled(del, theme.red_style()),
+        ]));
     }
+
+    if files.len() > 8 {
+        lines.push(Line::from(Span::styled(
+            format!("  ... +{} more", files.len() - 8),
+            theme.dim_style(),
+        )));
+    }
+
+    let para = Paragraph::new(lines);
+    f.render_widget(para, area);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

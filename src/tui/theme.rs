@@ -1,57 +1,49 @@
 use ratatui::style::{Color, Modifier, Style};
 
 pub struct Theme {
-    pub primary: Color,
-    pub success: Color,
-    pub error: Color,
-    pub text: Color,
-    pub text_dim: Color,
-    pub border: Color,
-    pub border_focused: Color,
+    pub fg: Color,
+    pub dim: Color,
+    pub accent: Color,
+    pub green: Color,
+    pub red: Color,
+    pub yellow: Color,
 }
 
 impl Theme {
-    pub fn default() -> Self {
+    pub fn gruvbox() -> Self {
         Self {
-            primary: Color::Cyan,
-            success: Color::Green,
-            error: Color::Red,
-            text: Color::White,
-            text_dim: Color::Gray,
-            border: Color::DarkGray,
-            border_focused: Color::Cyan,
+            fg: Color::Rgb(235, 219, 178),
+            dim: Color::Rgb(146, 131, 116),
+            accent: Color::Rgb(254, 128, 25),
+            green: Color::Rgb(184, 187, 38),
+            red: Color::Rgb(251, 73, 52),
+            yellow: Color::Rgb(250, 189, 47),
         }
     }
 
-    pub fn title_style(&self) -> Style {
-        Style::default()
-            .fg(self.primary)
-            .add_modifier(Modifier::BOLD)
-    }
-
-    pub fn success_style(&self) -> Style {
-        Style::default()
-            .fg(self.success)
-            .add_modifier(Modifier::BOLD)
-    }
-
-    pub fn error_style(&self) -> Style {
-        Style::default().fg(self.error).add_modifier(Modifier::BOLD)
-    }
-
-    pub fn added_style(&self) -> Style {
-        Style::default().fg(self.success)
-    }
-
-    pub fn deleted_style(&self) -> Style {
-        Style::default().fg(self.error)
+    pub fn fg_style(&self) -> Style {
+        Style::default().fg(self.fg)
     }
 
     pub fn dim_style(&self) -> Style {
-        Style::default().fg(self.text_dim)
+        Style::default().fg(self.dim)
     }
 
-    pub fn normal_style(&self) -> Style {
-        Style::default().fg(self.text)
+    pub fn accent_style(&self) -> Style {
+        Style::default()
+            .fg(self.accent)
+            .add_modifier(Modifier::BOLD)
+    }
+
+    pub fn green_style(&self) -> Style {
+        Style::default().fg(self.green)
+    }
+
+    pub fn red_style(&self) -> Style {
+        Style::default().fg(self.red)
+    }
+
+    pub fn yellow_style(&self) -> Style {
+        Style::default().fg(self.yellow)
     }
 }

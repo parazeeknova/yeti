@@ -10,8 +10,6 @@ pub struct GitRepo {
 pub struct StagedSummary {
     pub branch: String,
     pub files: Vec<FileInfo>,
-    pub total_additions: usize,
-    pub total_deletions: usize,
 }
 
 impl GitRepo {
@@ -36,15 +34,7 @@ impl GitRepo {
             return Err(YetiError::NoChangesToCommit);
         }
 
-        let total_additions = files.iter().map(|f| f.additions).sum();
-        let total_deletions = files.iter().map(|f| f.deletions).sum();
-
-        Ok(StagedSummary {
-            branch,
-            files,
-            total_additions,
-            total_deletions,
-        })
+        Ok(StagedSummary { branch, files })
     }
 
     fn get_staged_files(&self) -> Result<Vec<FileInfo>> {

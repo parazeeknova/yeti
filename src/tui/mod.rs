@@ -4,7 +4,7 @@ mod widgets;
 
 pub use app::App;
 pub use theme::Theme;
-pub use widgets::{ErrorPopup, FileList, KeyInputPopup};
+pub use widgets::{draw_error, draw_files, draw_key_input};
 
 use crate::error::Result;
 use crossterm::event::{self, Event};

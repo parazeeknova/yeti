@@ -119,9 +119,9 @@ impl Tui {
         println!();
 
         let status = if result.dry_run {
-            format!("{}dry run{}", yellow, reset)
+            format!("{}scent marked{}", yellow, reset)
         } else {
-            format!("{}committed{}", green, reset)
+            format!("{}territory marked{}", green, reset)
         };
 
         println!("  {}", status);

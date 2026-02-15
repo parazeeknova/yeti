@@ -30,7 +30,7 @@ pub fn draw_key_input(
     };
 
     let mut lines = vec![
-        Line::from(Span::styled("API Key", theme.accent_style())),
+        Line::from(Span::styled("mark your territory", theme.accent_style())),
         Line::from(""),
         Line::from(Span::styled(masked, theme.fg_style())),
     ];
@@ -42,7 +42,7 @@ pub fn draw_key_input(
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "cloud.cerebras.ai  ·  Enter to save  ·  Esc to cancel",
+        "cloud.cerebras.ai  ·  Enter to save  ·  Esc to retreat",
         theme.dim_style(),
     )));
 
@@ -59,16 +59,16 @@ pub fn draw_error(f: &mut Frame, theme: &Theme, message: &str, retryable: bool) 
     f.render_widget(Clear, area);
 
     let mut lines = vec![
-        Line::from(Span::styled("Error", theme.red_style())),
+        Line::from(Span::styled("lost the scent", theme.red_style())),
         Line::from(""),
         Line::from(Span::styled(message, theme.fg_style())),
         Line::from(""),
     ];
 
     let hint = if retryable {
-        "R to retry  ·  K for new key  ·  Q to quit"
+        "R to track again  ·  K for new key  ·  Q to retreat"
     } else {
-        "Q to quit"
+        "Q to retreat"
     };
     lines.push(Line::from(Span::styled(hint, theme.dim_style())));
 

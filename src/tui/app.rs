@@ -314,19 +314,19 @@ impl App {
                     ]),
                     Line::from(""),
                     Line::from(vec![
-                        Span::styled("  staging files...", self.theme.accent_style()),
+                        Span::styled("  sniffing out changes...", self.theme.accent_style()),
                     ]),
                 ];
                 f.render_widget(Paragraph::new(lines), f.area());
             }
             AppState::Generating { branch, files, generated } => {
-                self.draw_main(f, branch, files, generated, "generating...");
+                self.draw_main(f, branch, files, generated, "tracking...");
             }
             AppState::Committing { branch, files, message } => {
-                self.draw_main(f, branch, files, message, "committing...");
+                self.draw_main(f, branch, files, message, "marking territory...");
             }
             AppState::Done { branch, files, message, .. } => {
-                let status = if self.dry_run { "dry run" } else { "committed" };
+                let status = if self.dry_run { "scent marked" } else { "territory marked" };
                 self.draw_main(f, branch, files, message, status);
             }
             AppState::Error { message, retryable } => {
@@ -415,7 +415,7 @@ impl App {
 
         f.render_widget(Paragraph::new(file_lines), files_area);
 
-        let status_style = if status == "committed" || status == "dry run" {
+        let status_style = if status == "territory marked" || status == "scent marked" {
             self.theme.green_style()
         } else {
             self.theme.accent_style()

@@ -10,7 +10,7 @@ use crate::error::Result;
 use crossterm::event::{self, Event};
 use crossterm::execute;
 use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, size,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io::{self, Stdout, Write};
@@ -61,47 +61,68 @@ impl Tui {
         let bold = "\x1b[1m";
         let reset = "\x1b[0m";
 
-        let term_width = size().map(|(w, _)| w as usize).unwrap_or(80);
-        let table_width = term_width.saturating_sub(4).max(40);
-
-        let status_col = 10;
-        let changes_col = 12;
-        let file_col = table_width.saturating_sub(status_col + changes_col + 4);
-
-        let hline = "─".repeat(table_width);
-        let top_border = format!("┌{}┐", hline);
-        let bot_border = format!("└{}┘", hline);
-        let row_sep = format!("├{}┼{}┼{}┤",
-            "─".repeat(status_col + 1),
-            "─".repeat(file_col + 1),
-            "─".repeat(changes_col + 1)
-        );
-
         println!();
 
         println!(
             "  {}{}yeti{} {}{}{}",
-            bold, orange, reset,
-            blue, result.branch, reset
+            bold, orange, reset, blue, result.branch, reset
         );
 
         println!();
 
-        println!("  {}{}{}", dim, top_border, reset);
+        let status_w = 8;
+
+        let max_file_len = result
+            .files
+            .iter()
+            .take(10)
+            .map(|f| f.path.len().min(50))
+            .max()
+            .unwrap_or(10)
+            .max(10);
+
+        let changes_w = result
+            .files
+            .iter()
+            .take(10)
+            .map(|f| format!("+{}/-{}", f.additions, f.deletions).len())
+            .max()
+            .unwrap_or(8)
+            .max(8);
+
+        let total_changes = format!("+{} -{}", total_add, total_del);
+        let total_changes_w = total_changes.len().max(changes_w);
+
+        let table_w = status_w + max_file_len + total_changes_w + 4;
+
+        println!("  {}┌{}┐{}", dim, "─".repeat(table_w), reset);
 
         println!(
-            "  {}│{} {:width$}{}│{} {:width$}{}│{} {:width$} {}│{}",
-            dim, reset,
-            &format!("{}status{}", bold, reset),
-            dim, reset,
-            &format!("{}file{}", bold, reset),
-            dim, reset,
-            &format!("{}+/-{}", bold, reset),
-            dim, reset,
-            width = (table_width - 3) / 3
+            "  {}│{} {:sw$} {}│{} {:fw$} {}│{} {:cw$} {}│{}",
+            dim,
+            reset,
+            "status",
+            dim,
+            reset,
+            "file",
+            dim,
+            reset,
+            "+/-",
+            dim,
+            reset,
+            sw = status_w,
+            fw = max_file_len,
+            cw = total_changes_w
         );
 
-        println!("  {}{}{}", dim, row_sep, reset);
+        println!(
+            "  {}├{}┼{}┼{}┤{}",
+            dim,
+            "─".repeat(status_w + 1),
+            "─".repeat(max_file_len + 1),
+            "─".repeat(total_changes_w + 1),
+            reset
+        );
 
         for file in result.files.iter().take(10) {
             let (icon, icon_color) = match file.status {
@@ -111,8 +132,8 @@ impl Tui {
                 crate::prompt::FileStatus::Modified => ("modified", orange),
             };
 
-            let path_display = if file.path.len() > file_col {
-                format!("...{}", &file.path[file.path.len() - file_col + 3..])
+            let path_display = if file.path.len() > max_file_len {
+                format!("...{}", &file.path[file.path.len() - max_file_len + 3..])
             } else {
                 file.path.clone()
             };
@@ -120,53 +141,75 @@ impl Tui {
             let changes = format!("+{}/-{}", file.additions, file.deletions);
 
             println!(
-                "  {}│{} {}{:<width$}{} {}│{} {:<file_w$} {}│{} {:^changes_w$} {}│{}",
-                dim, reset,
-                icon_color, icon, reset,
-                dim, reset,
+                "  {}│{} {}{:<sw$}{} {}│{} {:<fw$} {}│{} {:>cw$} {}│{}",
+                dim,
+                reset,
+                icon_color,
+                icon,
+                reset,
+                dim,
+                reset,
                 path_display,
-                dim, reset,
+                dim,
+                reset,
                 changes,
-                dim, reset,
-                width = status_col - 1,
-                file_w = file_col,
-                changes_w = changes_col
+                dim,
+                reset,
+                sw = status_w,
+                fw = max_file_len,
+                cw = total_changes_w
             );
         }
 
         if result.files.len() > 10 {
+            let more = format!("... {} more files", result.files.len() - 10);
             println!(
-                "  {}│{} {:status_w$} {}│{} {:file_w$} {}│{} {:changes_w$} {}│{}",
-                dim, reset,
-                "", dim, reset,
-                &format!("{}... {} more files{}", dim, result.files.len() - 10, reset),
-                dim, reset,
-                "", dim, reset,
-                status_w = status_col,
-                file_w = file_col,
-                changes_w = changes_col
+                "  {}│{} {:sw$} {}│{} {:fw$} {}│{} {:cw$} {}│{}",
+                dim,
+                reset,
+                "",
+                dim,
+                reset,
+                more,
+                dim,
+                reset,
+                "",
+                dim,
+                reset,
+                sw = status_w,
+                fw = max_file_len,
+                cw = total_changes_w
             );
         }
 
-        println!("  {}{}{}", dim, row_sep, reset);
-
-        let total_changes = format!("+{} -{}", total_add, total_del);
-
         println!(
-            "  {}│{} {:status_w$} {}│{} {:file_w$} {}│{} {:changes_w$} {}│{}",
-            dim, reset,
-            &format!("{}total{}", bold, reset),
-            dim, reset,
-            format!("{} files", result.files.len()),
-            dim, reset,
-            total_changes,
-            dim, reset,
-            status_w = status_col,
-            file_w = file_col,
-            changes_w = changes_col
+            "  {}├{}┼{}┼{}┤{}",
+            dim,
+            "─".repeat(status_w + 1),
+            "─".repeat(max_file_len + 1),
+            "─".repeat(total_changes_w + 1),
+            reset
         );
 
-        println!("  {}{}{}", dim, bot_border, reset);
+        println!(
+            "  {}│{} {:sw$} {}│{} {:fw$} {}│{} {:>cw$} {}│{}",
+            dim,
+            reset,
+            "total",
+            dim,
+            reset,
+            format!("{} files", result.files.len()),
+            dim,
+            reset,
+            total_changes,
+            dim,
+            reset,
+            sw = status_w,
+            fw = max_file_len,
+            cw = total_changes_w
+        );
+
+        println!("  {}└{}┘{}", dim, "─".repeat(table_w), reset);
 
         println!();
 
@@ -181,46 +224,58 @@ impl Tui {
         println!();
 
         let msg_lines: Vec<&str> = result.message.lines().collect();
-        let max_msg_len = msg_lines.iter().map(|l| l.len()).max().unwrap_or(0).min(table_width);
+        let max_msg_len = msg_lines
+            .iter()
+            .map(|l| l.chars().count())
+            .max()
+            .unwrap_or(20)
+            .max(20);
 
-        let msg_box_width = max_msg_len.max(20);
-        let msg_hline = "─".repeat(msg_box_width);
-        let msg_top = format!("┌{}┐", msg_hline);
-        let msg_bot = format!("└{}┘", msg_hline);
-
-        println!("  {}{}{}", dim, msg_top, reset);
+        println!("  {}┌{}┐{}", dim, "─".repeat(max_msg_len + 2), reset);
 
         let mut first = true;
         for line in msg_lines.iter() {
+            let line_len = line.chars().count();
+            let padding = max_msg_len.saturating_sub(line_len) + 1;
+
             if first {
                 println!(
                     "  {}│{} {}{}{}{} {}│{}",
-                    dim, reset,
-                    bold, line, reset,
-                    " ".repeat(msg_box_width.saturating_sub(line.len() + 1)),
-                    dim, reset
+                    dim,
+                    reset,
+                    bold,
+                    line,
+                    reset,
+                    " ".repeat(padding),
+                    dim,
+                    reset
                 );
                 first = false;
             } else if line.is_empty() {
                 println!(
-                    "  {}│{} {:width$} {}│{}",
-                    dim, reset,
+                    "  {}│{} {:p$} {}│{}",
+                    dim,
+                    reset,
                     "",
-                    dim, reset,
-                    width = msg_box_width - 1
+                    dim,
+                    reset,
+                    p = max_msg_len + 1
                 );
             } else {
                 println!(
-                    "  {}│{} {:width$} {}│{}",
-                    dim, reset,
+                    "  {}│{} {}{:p$} {}│{}",
+                    dim,
+                    reset,
                     line,
-                    dim, reset,
-                    width = msg_box_width.saturating_sub(line.len() + 1)
+                    "",
+                    dim,
+                    reset,
+                    p = padding
                 );
             }
         }
 
-        println!("  {}{}{}", dim, msg_bot, reset);
+        println!("  {}└{}┘{}", dim, "─".repeat(max_msg_len + 2), reset);
 
         println!();
     }

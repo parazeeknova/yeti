@@ -60,7 +60,10 @@ impl Tui {
         let dim = Color::AnsiValue(246);
 
         println!();
-        println!("  \x1b[1m\x1b[38;5;208myeti\x1b[0m \x1b[38;5;109m{}\x1b[0m", result.branch);
+        println!(
+            "  \x1b[1m\x1b[38;5;208myeti\x1b[0m \x1b[38;5;109m{}\x1b[0m",
+            result.branch
+        );
         println!();
 
         let mut table = Table::new();
@@ -107,8 +110,12 @@ impl Tui {
         table.add_row(vec![
             Cell::new("total").add_attribute(Attribute::Bold),
             Cell::new(format!("{} files", result.files.len())).add_attribute(Attribute::Bold),
-            Cell::new(format!("+{}", total_add)).fg(green).add_attribute(Attribute::Bold),
-            Cell::new(format!("-{}", total_del)).fg(red).add_attribute(Attribute::Bold),
+            Cell::new(format!("+{}", total_add))
+                .fg(green)
+                .add_attribute(Attribute::Bold),
+            Cell::new(format!("-{}", total_del))
+                .fg(red)
+                .add_attribute(Attribute::Bold),
         ]);
 
         println!("{table}");
@@ -150,7 +157,12 @@ impl Tui {
             }
         }
 
-        let max_msg_len = wrapped_lines.iter().map(|l| l.chars().count()).max().unwrap_or(40).min(max_width);
+        let max_msg_len = wrapped_lines
+            .iter()
+            .map(|l| l.chars().count())
+            .max()
+            .unwrap_or(40)
+            .min(max_width);
 
         println!("  {}┌{}┐{}", dim_code, "─".repeat(max_msg_len + 2), reset);
 

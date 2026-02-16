@@ -38,13 +38,18 @@ impl GitRepo {
     }
 
     fn get_staged_files(&self) -> Result<Vec<FileInfo>> {
-        let head_tree = self.repo.revparse_single("HEAD").ok().and_then(|o| o.peel_to_tree().ok());
+        let head_tree = self
+            .repo
+            .revparse_single("HEAD")
+            .ok()
+            .and_then(|o| o.peel_to_tree().ok());
 
         let mut opts = DiffOptions::new();
         opts.include_untracked(true).recurse_untracked_dirs(true);
 
         let diff = if let Some(tree) = &head_tree {
-            self.repo.diff_tree_to_index(Some(tree), None, Some(&mut opts))?
+            self.repo
+                .diff_tree_to_index(Some(tree), None, Some(&mut opts))?
         } else {
             self.repo.diff_tree_to_index(None, None, Some(&mut opts))?
         };
@@ -53,7 +58,10 @@ impl GitRepo {
 
         diff.foreach(
             &mut |delta, _| {
-                let path = delta.new_file().path().map(|p| p.to_string_lossy().to_string());
+                let path = delta
+                    .new_file()
+                    .path()
+                    .map(|p| p.to_string_lossy().to_string());
                 if let Some(path) = path {
                     let status = match delta.status() {
                         git2::Delta::Added => FileStatus::Added,
@@ -88,7 +96,11 @@ impl GitRepo {
     }
 
     fn get_file_stats(&self, path: &str, status: FileStatus) -> Result<(usize, usize, String)> {
-        let head_tree = self.repo.revparse_single("HEAD").ok().and_then(|o| o.peel_to_tree().ok());
+        let head_tree = self
+            .repo
+            .revparse_single("HEAD")
+            .ok()
+            .and_then(|o| o.peel_to_tree().ok());
 
         let mut opts = DiffOptions::new();
         opts.pathspec(path);
@@ -101,14 +113,16 @@ impl GitRepo {
                 opts.recurse_untracked_dirs(true);
 
                 if let Some(tree) = &head_tree {
-                    self.repo.diff_tree_to_workdir(Some(tree), Some(&mut opts))?
+                    self.repo
+                        .diff_tree_to_workdir(Some(tree), Some(&mut opts))?
                 } else {
                     self.repo.diff_tree_to_workdir(None, Some(&mut opts))?
                 }
             }
             _ => {
                 if let Some(tree) = &head_tree {
-                    self.repo.diff_tree_to_workdir(Some(tree), Some(&mut opts))?
+                    self.repo
+                        .diff_tree_to_workdir(Some(tree), Some(&mut opts))?
                 } else {
                     self.repo.diff_tree_to_workdir(None, Some(&mut opts))?
                 }
@@ -149,10 +163,7 @@ impl GitRepo {
 
 pub fn commit_with_git_cli(title: &str, body: Option<&str>) -> Result<()> {
     let mut cmd = std::process::Command::new("git");
-    cmd.arg("commit")
-        .arg("-m")
-        .arg(title)
-        .arg("--no-verify");
+    cmd.arg("commit").arg("-m").arg(title).arg("--no-verify");
 
     if let Some(b) = body
         && !b.is_empty()

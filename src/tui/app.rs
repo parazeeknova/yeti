@@ -18,12 +18,34 @@ use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub enum AppState {
-    ApiKeyInput { input: String, cursor: usize, error: Option<String> },
-    Staging { branch: String },
-    Generating { branch: String, files: Vec<FileInfo>, generated: String },
-    Committing { branch: String, files: Vec<FileInfo>, message: String },
-    Done { branch: String, files: Vec<FileInfo>, message: String, done_at: Instant },
-    Error { message: String, retryable: bool },
+    ApiKeyInput {
+        input: String,
+        cursor: usize,
+        error: Option<String>,
+    },
+    Staging {
+        branch: String,
+    },
+    Generating {
+        branch: String,
+        files: Vec<FileInfo>,
+        generated: String,
+    },
+    Committing {
+        branch: String,
+        files: Vec<FileInfo>,
+        message: String,
+    },
+    Done {
+        branch: String,
+        files: Vec<FileInfo>,
+        message: String,
+        done_at: Instant,
+    },
+    Error {
+        message: String,
+        retryable: bool,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -65,9 +87,15 @@ impl App {
         let (event_tx, event_rx) = mpsc::channel();
 
         let state = if args.reset_key || api_key.is_none() {
-            AppState::ApiKeyInput { input: String::new(), cursor: 0, error: None }
+            AppState::ApiKeyInput {
+                input: String::new(),
+                cursor: 0,
+                error: None,
+            }
         } else {
-            AppState::Staging { branch: "unknown".into() }
+            AppState::Staging {
+                branch: "unknown".into(),
+            }
         };
 
         Ok(Self {
@@ -127,15 +155,22 @@ impl App {
             })();
 
             match result {
-                Ok(summary) => { let _ = tx.send(AppEvent::StagingComplete(summary)); }
-                Err(e) => { let _ = tx.send(AppEvent::StagingFailed(e.to_string())); }
+                Ok(summary) => {
+                    let _ = tx.send(AppEvent::StagingComplete(summary));
+                }
+                Err(e) => {
+                    let _ = tx.send(AppEvent::StagingFailed(e.to_string()));
+                }
             }
         });
     }
 
     fn start_generation(&mut self, summary: StagedSummary) {
         let Some(api_key) = self.api_key.clone() else {
-            self.state = AppState::Error { message: "No API key".into(), retryable: true };
+            self.state = AppState::Error {
+                message: "No API key".into(),
+                retryable: true,
+            };
             return;
         };
 
@@ -164,14 +199,30 @@ impl App {
 
     fn handle_key(&mut self, code: KeyCode) {
         match &mut self.state {
-            AppState::ApiKeyInput { input, cursor, error } => {
+            AppState::ApiKeyInput {
+                input,
+                cursor,
+                error,
+            } => {
                 error.take();
                 match code {
-                    KeyCode::Char(c) => { input.insert(*cursor, c); *cursor += 1; }
-                    KeyCode::Backspace if *cursor > 0 => { input.remove(*cursor - 1); *cursor -= 1; }
-                    KeyCode::Delete if *cursor < input.len() => { input.remove(*cursor); }
-                    KeyCode::Left if *cursor > 0 => { *cursor -= 1; }
-                    KeyCode::Right if *cursor < input.len() => { *cursor += 1; }
+                    KeyCode::Char(c) => {
+                        input.insert(*cursor, c);
+                        *cursor += 1;
+                    }
+                    KeyCode::Backspace if *cursor > 0 => {
+                        input.remove(*cursor - 1);
+                        *cursor -= 1;
+                    }
+                    KeyCode::Delete if *cursor < input.len() => {
+                        input.remove(*cursor);
+                    }
+                    KeyCode::Left if *cursor > 0 => {
+                        *cursor -= 1;
+                    }
+                    KeyCode::Right if *cursor < input.len() => {
+                        *cursor += 1;
+                    }
                     KeyCode::Enter if !input.is_empty() => {
                         let _ = self.event_tx.send(AppEvent::ApiKeyEntered(input.clone()));
                     }
@@ -180,11 +231,17 @@ impl App {
             }
             AppState::Error { retryable, .. } => match code {
                 KeyCode::Char('r') | KeyCode::Char('R') if *retryable => {
-                    self.state = AppState::Staging { branch: "unknown".into() };
+                    self.state = AppState::Staging {
+                        branch: "unknown".into(),
+                    };
                     self.start_staging();
                 }
                 KeyCode::Char('k') | KeyCode::Char('K') => {
-                    self.state = AppState::ApiKeyInput { input: String::new(), cursor: 0, error: None };
+                    self.state = AppState::ApiKeyInput {
+                        input: String::new(),
+                        cursor: 0,
+                        error: None,
+                    };
                 }
                 _ => {}
             },
@@ -208,17 +265,26 @@ impl App {
                 if let Some(ref key) = self.api_key {
                     let _ = config::save_api_key(key);
                 }
-                self.state = AppState::Staging { branch: "unknown".into() };
+                self.state = AppState::Staging {
+                    branch: "unknown".into(),
+                };
                 self.start_staging();
             }
             AppEvent::ApiKeyValidationFailed(err) => {
-                self.state = AppState::ApiKeyInput { input: String::new(), cursor: 0, error: Some(err) };
+                self.state = AppState::ApiKeyInput {
+                    input: String::new(),
+                    cursor: 0,
+                    error: Some(err),
+                };
             }
             AppEvent::StagingComplete(summary) => {
                 self.start_generation(summary);
             }
             AppEvent::StagingFailed(err) => {
-                self.state = AppState::Error { message: err, retryable: false };
+                self.state = AppState::Error {
+                    message: err,
+                    retryable: false,
+                };
             }
             AppEvent::GenerationChunk(chunk) => {
                 if let AppState::Generating { generated, .. } = &mut self.state {
@@ -266,10 +332,13 @@ impl App {
                     let tx = self.event_tx.clone();
                     thread::spawn(move || {
                         let _ = tx.send(
-                            match crate::git::commit_with_git_cli(&title_for_commit, body_for_commit.as_deref()) {
+                            match crate::git::commit_with_git_cli(
+                                &title_for_commit,
+                                body_for_commit.as_deref(),
+                            ) {
                                 Ok(_) => AppEvent::CommitComplete,
                                 Err(e) => AppEvent::CommitFailed(e.to_string()),
-                            }
+                            },
                         );
                     });
 
@@ -282,10 +351,18 @@ impl App {
                 }
             }
             AppEvent::GenerationFailed(err) => {
-                self.state = AppState::Error { message: err, retryable: true };
+                self.state = AppState::Error {
+                    message: err,
+                    retryable: true,
+                };
             }
             AppEvent::CommitComplete => {
-                if let AppState::Committing { branch, files, message } = &self.state {
+                if let AppState::Committing {
+                    branch,
+                    files,
+                    message,
+                } = &self.state
+                {
                     self.state = AppState::Done {
                         branch: branch.clone(),
                         files: files.clone(),
@@ -295,14 +372,21 @@ impl App {
                 }
             }
             AppEvent::CommitFailed(err) => {
-                self.state = AppState::Error { message: err, retryable: false };
+                self.state = AppState::Error {
+                    message: err,
+                    retryable: false,
+                };
             }
         }
     }
 
     fn draw(&self, f: &mut Frame) {
         match &self.state {
-            AppState::ApiKeyInput { input, cursor, error } => {
+            AppState::ApiKeyInput {
+                input,
+                cursor,
+                error,
+            } => {
                 draw_key_input(f, &self.theme, input, *cursor, error.as_deref());
             }
             AppState::Staging { branch } => {
@@ -313,20 +397,38 @@ impl App {
                         Span::styled(branch.as_str(), self.theme.fg_style()),
                     ]),
                     Line::from(""),
-                    Line::from(vec![
-                        Span::styled("  sniffing out changes...", self.theme.accent_style()),
-                    ]),
+                    Line::from(vec![Span::styled(
+                        "  sniffing out changes...",
+                        self.theme.accent_style(),
+                    )]),
                 ];
                 f.render_widget(Paragraph::new(lines), f.area());
             }
-            AppState::Generating { branch, files, generated } => {
+            AppState::Generating {
+                branch,
+                files,
+                generated,
+            } => {
                 self.draw_main(f, branch, files, generated, "tracking...");
             }
-            AppState::Committing { branch, files, message } => {
+            AppState::Committing {
+                branch,
+                files,
+                message,
+            } => {
                 self.draw_main(f, branch, files, message, "marking territory...");
             }
-            AppState::Done { branch, files, message, .. } => {
-                let status = if self.dry_run { "scent marked" } else { "territory marked" };
+            AppState::Done {
+                branch,
+                files,
+                message,
+                ..
+            } => {
+                let status = if self.dry_run {
+                    "scent marked"
+                } else {
+                    "territory marked"
+                };
                 self.draw_main(f, branch, files, message, status);
             }
             AppState::Error { message, retryable } => {
@@ -335,16 +437,37 @@ impl App {
         }
     }
 
-    fn draw_main(&self, f: &mut Frame, branch: &str, files: &[FileInfo], message: &str, status: &str) {
+    fn draw_main(
+        &self,
+        f: &mut Frame,
+        branch: &str,
+        files: &[FileInfo],
+        message: &str,
+        status: &str,
+    ) {
         let area = f.area();
         let files_height = (files.len().min(10) + 4) as u16;
-        let files_area = Rect { x: area.x, y: area.y, width: area.width, height: files_height };
-        let msg_area = Rect { x: area.x, y: files_height, width: area.width, height: area.height.saturating_sub(files_height) };
+        let files_area = Rect {
+            x: area.x,
+            y: area.y,
+            width: area.width,
+            height: files_height,
+        };
+        let msg_area = Rect {
+            x: area.x,
+            y: files_height,
+            width: area.width,
+            height: area.height.saturating_sub(files_height),
+        };
 
         let total_add: usize = files.iter().map(|f| f.additions).sum();
         let total_del: usize = files.iter().map(|f| f.deletions).sum();
 
-        let separator = "─".repeat(area.width as usize).chars().take(area.width as usize).collect::<String>();
+        let separator = "─"
+            .repeat(area.width as usize)
+            .chars()
+            .take(area.width as usize)
+            .collect::<String>();
 
         let mut header = vec![
             Span::styled("  yeti ", self.theme.accent_style()),
@@ -367,7 +490,12 @@ impl App {
             Line::from(Span::styled(separator.clone(), self.theme.dim_style())),
         ];
 
-        let max_path_len = files.iter().map(|f| f.path.len()).max().unwrap_or(0).min(40);
+        let max_path_len = files
+            .iter()
+            .map(|f| f.path.len())
+            .max()
+            .unwrap_or(0)
+            .min(40);
 
         for file in files.iter().take(10) {
             let (icon, icon_style) = match file.status {
@@ -409,7 +537,10 @@ impl App {
         if files.len() > 10 {
             file_lines.push(Line::from(vec![
                 Span::styled("  ", self.theme.fg_style()),
-                Span::styled(format!("... {} more", files.len() - 10), self.theme.dim_style()),
+                Span::styled(
+                    format!("... {} more", files.len() - 10),
+                    self.theme.dim_style(),
+                ),
             ]));
         }
 

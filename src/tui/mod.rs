@@ -129,11 +129,32 @@ impl Tui {
         let reset = "\x1b[0m";
         let bold_code = "\x1b[1m";
 
-        let max_msg_len = result.message.lines().map(|l| l.chars().count()).max().unwrap_or(40).max(40);
+        let max_width = 72usize;
+
+        let mut wrapped_lines = Vec::new();
+        for line in result.message.lines() {
+            if line.chars().count() <= max_width {
+                wrapped_lines.push(line.to_string());
+            } else {
+                let mut current = String::new();
+                for ch in line.chars() {
+                    current.push(ch);
+                    if current.chars().count() >= max_width {
+                        wrapped_lines.push(current.clone());
+                        current.clear();
+                    }
+                }
+                if !current.is_empty() {
+                    wrapped_lines.push(current);
+                }
+            }
+        }
+
+        let max_msg_len = wrapped_lines.iter().map(|l| l.chars().count()).max().unwrap_or(40).min(max_width);
 
         println!("  {}┌{}┐{}", dim_code, "─".repeat(max_msg_len + 2), reset);
 
-        for (i, line) in result.message.lines().enumerate() {
+        for (i, line) in wrapped_lines.iter().enumerate() {
             let line_len = line.chars().count();
             let padding = max_msg_len.saturating_sub(line_len) + 1;
             if i == 0 {

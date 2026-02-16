@@ -7,6 +7,7 @@ pub use theme::Theme;
 pub use widgets::{draw_error, draw_key_input};
 
 use crate::error::Result;
+use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
 use crossterm::event::{self, Event};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -52,216 +53,93 @@ impl Tui {
         let total_add: usize = result.files.iter().map(|f| f.additions).sum();
         let total_del: usize = result.files.iter().map(|f| f.deletions).sum();
 
-        let dim = "\x1b[38;5;246m";
-        let green = "\x1b[38;5;142m";
-        let red = "\x1b[38;5;167m";
-        let yellow = "\x1b[38;5;214m";
-        let orange = "\x1b[38;5;208m";
-        let blue = "\x1b[38;5;109m";
-        let bold = "\x1b[1m";
-        let reset = "\x1b[0m";
+        let orange = Color::AnsiValue(208);
+        let green = Color::AnsiValue(142);
+        let red = Color::AnsiValue(167);
+        let yellow = Color::AnsiValue(214);
+        let dim = Color::AnsiValue(246);
 
         println!();
-
-        println!(
-            "  {}{}yeti{} {}{}{}",
-            bold, orange, reset, blue, result.branch, reset
-        );
-
+        println!("  \x1b[1m\x1b[38;5;208myeti\x1b[0m \x1b[38;5;109m{}\x1b[0m", result.branch);
         println!();
 
-        let status_w = 8;
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic);
 
-        let max_file_len = result
-            .files
-            .iter()
-            .take(10)
-            .map(|f| f.path.len().min(50))
-            .max()
-            .unwrap_or(10)
-            .max(10);
-
-        let changes_w = result
-            .files
-            .iter()
-            .take(10)
-            .map(|f| format!("+{}/-{}", f.additions, f.deletions).len())
-            .max()
-            .unwrap_or(8)
-            .max(8);
-
-        let total_changes = format!("+{} -{}", total_add, total_del);
-        let total_changes_w = total_changes.len().max(changes_w);
-
-        let table_w = status_w + max_file_len + total_changes_w + 4;
-
-        println!("  {}┌{}┐{}", dim, "─".repeat(table_w), reset);
-
-        println!(
-            "  {}│{} {:sw$} {}│{} {:fw$} {}│{} {:cw$} {}│{}",
-            dim,
-            reset,
-            "status",
-            dim,
-            reset,
-            "file",
-            dim,
-            reset,
-            "+/-",
-            dim,
-            reset,
-            sw = status_w,
-            fw = max_file_len,
-            cw = total_changes_w
-        );
-
-        println!(
-            "  {}├{}┼{}┼{}┤{}",
-            dim,
-            "─".repeat(status_w + 1),
-            "─".repeat(max_file_len + 1),
-            "─".repeat(total_changes_w + 1),
-            reset
-        );
+        table.set_header(vec![
+            Cell::new("status").fg(dim).add_attribute(Attribute::Bold),
+            Cell::new("file").fg(dim).add_attribute(Attribute::Bold),
+            Cell::new("+/-").fg(dim).add_attribute(Attribute::Bold),
+        ]);
 
         for file in result.files.iter().take(10) {
-            let (icon, icon_color) = match file.status {
+            let (status_text, status_color) = match file.status {
                 crate::prompt::FileStatus::Added => ("added", green),
                 crate::prompt::FileStatus::Deleted => ("deleted", red),
                 crate::prompt::FileStatus::Renamed => ("renamed", yellow),
                 crate::prompt::FileStatus::Modified => ("modified", orange),
             };
 
-            let path_display = if file.path.len() > max_file_len {
-                format!("...{}", &file.path[file.path.len() - max_file_len + 3..])
+            let path_display = if file.path.len() > 50 {
+                format!("...{}", &file.path[file.path.len() - 47..])
             } else {
                 file.path.clone()
             };
 
             let changes = format!("+{}/-{}", file.additions, file.deletions);
 
-            println!(
-                "  {}│{} {}{:<sw$}{} {}│{} {:<fw$} {}│{} {:>cw$} {}│{}",
-                dim,
-                reset,
-                icon_color,
-                icon,
-                reset,
-                dim,
-                reset,
-                path_display,
-                dim,
-                reset,
-                changes,
-                dim,
-                reset,
-                sw = status_w,
-                fw = max_file_len,
-                cw = total_changes_w
-            );
+            table.add_row(vec![
+                Cell::new(status_text).fg(status_color),
+                Cell::new(path_display),
+                Cell::new(changes),
+            ]);
         }
 
         if result.files.len() > 10 {
-            let more = format!("... {} more files", result.files.len() - 10);
-            println!(
-                "  {}│{} {:sw$} {}│{} {:fw$} {}│{} {:cw$} {}│{}",
-                dim,
-                reset,
-                "",
-                dim,
-                reset,
-                more,
-                dim,
-                reset,
-                "",
-                dim,
-                reset,
-                sw = status_w,
-                fw = max_file_len,
-                cw = total_changes_w
-            );
+            table.add_row(vec![
+                Cell::new(""),
+                Cell::new(format!("... {} more files", result.files.len() - 10)).fg(dim),
+                Cell::new(""),
+            ]);
         }
 
-        println!(
-            "  {}├{}┼{}┼{}┤{}",
-            dim,
-            "─".repeat(status_w + 1),
-            "─".repeat(max_file_len + 1),
-            "─".repeat(total_changes_w + 1),
-            reset
-        );
+        let total_changes = format!("+{} -{}", total_add, total_del);
 
-        println!(
-            "  {}│{} {:sw$} {}│{} {:fw$} {}│{} {:>cw$} {}│{}",
-            dim,
-            reset,
-            "total",
-            dim,
-            reset,
-            format!("{} files", result.files.len()),
-            dim,
-            reset,
-            total_changes,
-            dim,
-            reset,
-            sw = status_w,
-            fw = max_file_len,
-            cw = total_changes_w
-        );
+        table.add_row(vec![
+            Cell::new("total").add_attribute(Attribute::Bold),
+            Cell::new(format!("{} files", result.files.len())).add_attribute(Attribute::Bold),
+            Cell::new(total_changes).add_attribute(Attribute::Bold),
+        ]);
 
-        println!("  {}└{}┘{}", dim, "─".repeat(table_w), reset);
+        println!("{table}");
 
         println!();
 
         let status = if result.dry_run {
-            format!("{}scent marked{}", yellow, reset)
+            format!("\x1b[38;5;214mscent marked\x1b[0m")
         } else {
-            format!("{}territory marked{}", green, reset)
+            format!("\x1b[38;5;142mterritory marked\x1b[0m")
         };
 
         println!("  {}", status);
 
         println!();
 
+        let mut msg_table = Table::new();
+        msg_table.load_preset(UTF8_FULL);
+
         let msg_lines: Vec<&str> = result.message.lines().collect();
-        let msg_inner_w = table_w.saturating_sub(1);
-
-        println!("  {}┌{}┐{}", dim, "─".repeat(table_w), reset);
-
-        let mut first = true;
-        for line in msg_lines.iter() {
-            let line_len = line.chars().count();
-            let padding = msg_inner_w.saturating_sub(line_len);
-
-            if first {
-                println!(
-                    "  {}│{} {}{}{}{}{}│{}",
-                    dim, reset,
-                    bold, line, reset,
-                    " ".repeat(padding),
-                    dim, reset
-                );
-                first = false;
-            } else if line.is_empty() {
-                let spaces = " ".repeat(msg_inner_w);
-                println!(
-                    "  {}│{} {}│{}{}",
-                    dim, reset,
-                    spaces,
-                    dim, reset
-                );
+        for (i, line) in msg_lines.iter().enumerate() {
+            if i == 0 {
+                msg_table.add_row(vec![Cell::new(line).add_attribute(Attribute::Bold)]);
             } else {
-                let spaces = " ".repeat(padding);
-                println!(
-                    "  {}│{} {}{}│{}{}",
-                    dim, reset,
-                    line, spaces,
-                    dim, reset
-                );
+                msg_table.add_row(vec![Cell::new(line)]);
             }
         }
 
-        println!("  {}└{}┘{}", dim, "─".repeat(table_w), reset);
+        println!("{msg_table}");
 
         println!();
     }

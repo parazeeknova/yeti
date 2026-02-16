@@ -69,8 +69,8 @@ impl Tui {
         table.set_header(vec![
             Cell::new("status").fg(dim).add_attribute(Attribute::Bold),
             Cell::new("file").fg(dim).add_attribute(Attribute::Bold),
-            Cell::new("add").fg(dim).add_attribute(Attribute::Bold),
-            Cell::new("del").fg(dim).add_attribute(Attribute::Bold),
+            Cell::new("+").fg(dim).add_attribute(Attribute::Bold),
+            Cell::new("-").fg(dim).add_attribute(Attribute::Bold),
         ]);
 
         for file in result.files.iter().take(10) {
@@ -90,8 +90,8 @@ impl Tui {
             table.add_row(vec![
                 Cell::new(status_text).fg(status_color),
                 Cell::new(path_display),
-                Cell::new(file.additions.to_string()).fg(green),
-                Cell::new(file.deletions.to_string()).fg(red),
+                Cell::new(format!("+{}", file.additions)).fg(green),
+                Cell::new(format!("-{}", file.deletions)).fg(red),
             ]);
         }
 
@@ -107,8 +107,8 @@ impl Tui {
         table.add_row(vec![
             Cell::new("total").add_attribute(Attribute::Bold),
             Cell::new(format!("{} files", result.files.len())).add_attribute(Attribute::Bold),
-            Cell::new(total_add.to_string()).fg(green).add_attribute(Attribute::Bold),
-            Cell::new(total_del.to_string()).fg(red).add_attribute(Attribute::Bold),
+            Cell::new(format!("+{}", total_add)).fg(green).add_attribute(Attribute::Bold),
+            Cell::new(format!("-{}", total_del)).fg(red).add_attribute(Attribute::Bold),
         ]);
 
         println!("{table}");
@@ -130,21 +130,21 @@ impl Tui {
         let bold_code = "\x1b[1m";
 
         let max_msg_len = result.message.lines().map(|l| l.chars().count()).max().unwrap_or(40).max(40);
-        let inner_w = max_msg_len + 2;
 
-        println!("  {}┌{}┐{}", dim_code, "─".repeat(inner_w), reset);
+        println!("  {}┌{}┐{}", dim_code, "─".repeat(max_msg_len + 2), reset);
 
         for (i, line) in result.message.lines().enumerate() {
             let line_len = line.chars().count();
-            let padding = inner_w.saturating_sub(line_len);
+            let padding = max_msg_len.saturating_sub(line_len) + 1;
             if i == 0 {
-                println!("  {}│{} {}{}{}{}│{}", dim_code, reset, bold_code, line, reset, " ".repeat(padding), dim_code);
+                print!("  {}│{} {}{}{}", dim_code, reset, bold_code, line, reset);
             } else {
-                println!("  {}│{} {}{}│{}", dim_code, reset, line, " ".repeat(padding), dim_code);
+                print!("  {}│{} {}", dim_code, reset, line);
             }
+            println!("{}│{}", " ".repeat(padding), reset);
         }
 
-        println!("  {}└{}┘{}", dim_code, "─".repeat(inner_w), reset);
+        println!("  {}└{}┘{}", dim_code, "─".repeat(max_msg_len + 2), reset);
 
         println!();
     }

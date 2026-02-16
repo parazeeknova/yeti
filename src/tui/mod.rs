@@ -88,12 +88,10 @@ impl Tui {
                 file.path.clone()
             };
 
-            let changes = format!("+{}/-{}", file.additions, file.deletions);
-
             table.add_row(vec![
                 Cell::new(status_text).fg(status_color),
                 Cell::new(path_display),
-                Cell::new(changes),
+                Cell::new(format!("\x1b[38;5;142m+{}\x1b[0m/\x1b[38;5;167m-{}\x1b[0m", file.additions, file.deletions)),
             ]);
         }
 
@@ -105,41 +103,47 @@ impl Tui {
             ]);
         }
 
-        let total_changes = format!("+{} -{}", total_add, total_del);
-
         table.add_row(vec![
             Cell::new("total").add_attribute(Attribute::Bold),
             Cell::new(format!("{} files", result.files.len())).add_attribute(Attribute::Bold),
-            Cell::new(total_changes).add_attribute(Attribute::Bold),
+            Cell::new(format!("\x1b[38;5;142m+{}\x1b[0m \x1b[38;5;167m-{}\x1b[0m", total_add, total_del)).add_attribute(Attribute::Bold),
         ]);
 
-        println!("{table}");
+        let table_str = format!("{table}");
+        let table_width = table_str.lines().next().map(|l| l.chars().count()).unwrap_or(60);
+
+        println!("{table_str}");
 
         println!();
 
         let status = if result.dry_run {
-            format!("\x1b[38;5;214mscent marked\x1b[0m")
+            "\x1b[38;5;214mscent marked\x1b[0m"
         } else {
-            format!("\x1b[38;5;142mterritory marked\x1b[0m")
+            "\x1b[38;5;142mterritory marked\x1b[0m"
         };
 
         println!("  {}", status);
 
         println!();
 
-        let mut msg_table = Table::new();
-        msg_table.load_preset(UTF8_FULL);
+        let inner_w = table_width.saturating_sub(2);
+        let dim_code = "\x1b[38;5;246m";
+        let reset = "\x1b[0m";
+        let bold_code = "\x1b[1m";
 
-        let msg_lines: Vec<&str> = result.message.lines().collect();
-        for (i, line) in msg_lines.iter().enumerate() {
+        println!("  {}┌{}┐{}", dim_code, "─".repeat(inner_w), reset);
+
+        for (i, line) in result.message.lines().enumerate() {
+            let line_len = line.chars().count();
+            let padding = inner_w.saturating_sub(line_len);
             if i == 0 {
-                msg_table.add_row(vec![Cell::new(line).add_attribute(Attribute::Bold)]);
+                println!("  {}│{} {}{}{}{}│{}", dim_code, reset, bold_code, line, reset, " ".repeat(padding), dim_code);
             } else {
-                msg_table.add_row(vec![Cell::new(line)]);
+                println!("  {}│{} {}{}│{}", dim_code, reset, line, " ".repeat(padding), dim_code);
             }
         }
 
-        println!("{msg_table}");
+        println!("  {}└{}┘{}", dim_code, "─".repeat(inner_w), reset);
 
         println!();
     }

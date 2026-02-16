@@ -7,7 +7,7 @@ pub use theme::Theme;
 pub use widgets::{draw_error, draw_key_input};
 
 use crate::error::Result;
-use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
+use comfy_table::{Attribute, Cell, Color, Table, presets::UTF8_FULL};
 use crossterm::event::{self, Event};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -64,14 +64,13 @@ impl Tui {
         println!();
 
         let mut table = Table::new();
-        table
-            .load_preset(UTF8_FULL)
-            .set_content_arrangement(ContentArrangement::Dynamic);
+        table.load_preset(UTF8_FULL);
 
         table.set_header(vec![
             Cell::new("status").fg(dim).add_attribute(Attribute::Bold),
             Cell::new("file").fg(dim).add_attribute(Attribute::Bold),
-            Cell::new("+/-").fg(dim).add_attribute(Attribute::Bold),
+            Cell::new("add").fg(dim).add_attribute(Attribute::Bold),
+            Cell::new("del").fg(dim).add_attribute(Attribute::Bold),
         ]);
 
         for file in result.files.iter().take(10) {
@@ -91,7 +90,8 @@ impl Tui {
             table.add_row(vec![
                 Cell::new(status_text).fg(status_color),
                 Cell::new(path_display),
-                Cell::new(format!("\x1b[38;5;142m+{}\x1b[0m/\x1b[38;5;167m-{}\x1b[0m", file.additions, file.deletions)),
+                Cell::new(file.additions.to_string()).fg(green),
+                Cell::new(file.deletions.to_string()).fg(red),
             ]);
         }
 
@@ -100,19 +100,18 @@ impl Tui {
                 Cell::new(""),
                 Cell::new(format!("... {} more files", result.files.len() - 10)).fg(dim),
                 Cell::new(""),
+                Cell::new(""),
             ]);
         }
 
         table.add_row(vec![
             Cell::new("total").add_attribute(Attribute::Bold),
             Cell::new(format!("{} files", result.files.len())).add_attribute(Attribute::Bold),
-            Cell::new(format!("\x1b[38;5;142m+{}\x1b[0m \x1b[38;5;167m-{}\x1b[0m", total_add, total_del)).add_attribute(Attribute::Bold),
+            Cell::new(total_add.to_string()).fg(green).add_attribute(Attribute::Bold),
+            Cell::new(total_del.to_string()).fg(red).add_attribute(Attribute::Bold),
         ]);
 
-        let table_str = format!("{table}");
-        let table_width = table_str.lines().next().map(|l| l.chars().count()).unwrap_or(60);
-
-        println!("{table_str}");
+        println!("{table}");
 
         println!();
 
@@ -126,10 +125,12 @@ impl Tui {
 
         println!();
 
-        let inner_w = table_width.saturating_sub(2);
         let dim_code = "\x1b[38;5;246m";
         let reset = "\x1b[0m";
         let bold_code = "\x1b[1m";
+
+        let max_msg_len = result.message.lines().map(|l| l.chars().count()).max().unwrap_or(40).max(40);
+        let inner_w = max_msg_len + 2;
 
         println!("  {}┌{}┐{}", dim_code, "─".repeat(inner_w), reset);
 

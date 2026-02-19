@@ -177,7 +177,7 @@ pub enum FileStatus {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_user_prompt, FileInfo, FileStatus};
+    use super::{FileInfo, FileStatus, build_user_prompt};
 
     fn file(
         path: &str,

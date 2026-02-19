@@ -8,9 +8,9 @@ use crate::tui::{Theme, Tui, draw_error, draw_key_input};
 use crossterm::event::{Event, KeyCode};
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Constraint, Layout},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Block, BorderType, Padding, Paragraph, Wrap},
 };
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -516,146 +516,167 @@ impl App {
         message: &str,
         status: &str,
     ) {
-        let area = f.area();
-        let files_height = (files.len().min(10) + 4) as u16;
-        let files_area = Rect {
-            x: area.x,
-            y: area.y,
-            width: area.width,
-            height: files_height,
-        };
-        let msg_area = Rect {
-            x: area.x,
-            y: files_height,
-            width: area.width,
-            height: area.height.saturating_sub(files_height),
-        };
-
         let total_add: usize = files.iter().map(|f| f.additions).sum();
         let total_del: usize = files.iter().map(|f| f.deletions).sum();
-
-        let separator = "─"
-            .repeat(area.width as usize)
-            .chars()
-            .take(area.width as usize)
-            .collect::<String>();
-
-        let mut header = vec![
-            Span::styled("  yeti ", self.theme.accent_style()),
-            Span::styled(branch, self.theme.fg_style()),
-            Span::styled("  ", self.theme.fg_style()),
-            Span::styled(format!("{} files", files.len()), self.theme.dim_style()),
-            Span::styled("  ", self.theme.fg_style()),
-            Span::styled(format!("+{}", total_add), self.theme.green_style()),
-            Span::styled(" ", self.theme.fg_style()),
-            Span::styled(format!("-{}", total_del), self.theme.red_style()),
-        ];
-
-        if status == "territory marked" || status == "scent marked" {
-            header.push(Span::styled("    ", self.theme.fg_style()));
-            header.push(Span::styled("done", self.theme.green_style()));
-        }
-
-        let mut file_lines = vec![
-            Line::from(header),
-            Line::from(Span::styled(separator.clone(), self.theme.dim_style())),
-        ];
-
-        let max_path_len = files
-            .iter()
-            .map(|f| f.path.len())
-            .max()
-            .unwrap_or(0)
-            .min(40);
-
-        for file in files.iter().take(10) {
-            let (icon, icon_style) = match file.status {
-                crate::prompt::FileStatus::Added => ("A", self.theme.green_style()),
-                crate::prompt::FileStatus::Deleted => ("D", self.theme.red_style()),
-                crate::prompt::FileStatus::Renamed => ("R", self.theme.yellow_style()),
-                crate::prompt::FileStatus::Modified => ("M", self.theme.yellow_style()),
-            };
-
-            let path_display = if file.path.len() > 40 {
-                format!("...{}", &file.path[file.path.len() - 37..])
-            } else {
-                format!("{:width$}", file.path, width = max_path_len)
-            };
-
-            let add_s = if file.additions > 0 {
-                format!("+{}", file.additions)
-            } else {
-                String::new()
-            };
-            let del_s = if file.deletions > 0 {
-                format!("-{}", file.deletions)
-            } else {
-                String::new()
-            };
-
-            file_lines.push(Line::from(vec![
-                Span::styled("  ", self.theme.fg_style()),
-                Span::styled(icon, icon_style),
-                Span::styled("  ", self.theme.fg_style()),
-                Span::styled(path_display, self.theme.fg_style()),
-                Span::styled("  ", self.theme.fg_style()),
-                Span::styled(add_s, self.theme.green_style()),
-                Span::styled(" ", self.theme.fg_style()),
-                Span::styled(del_s, self.theme.red_style()),
-            ]));
-        }
-
-        if files.len() > 10 {
-            file_lines.push(Line::from(vec![
-                Span::styled("  ", self.theme.fg_style()),
-                Span::styled(
-                    format!("... {} more", files.len() - 10),
-                    self.theme.dim_style(),
-                ),
-            ]));
-        }
-
-        f.render_widget(Paragraph::new(file_lines), files_area);
-
-        let status_style = if status == "territory marked" || status == "scent marked" {
+        let is_done = status == "territory marked" || status == "scent marked";
+        let status_style = if is_done {
             self.theme.green_style()
         } else {
             self.theme.accent_style()
         };
 
-        let mut msg_lines = vec![
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  ", self.theme.fg_style()),
-                Span::styled(status, status_style),
-            ]),
-            Line::from(""),
-        ];
+        let [header_area, body_area, footer_area] = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Min(10),
+            Constraint::Length(3),
+        ])
+        .areas(f.area());
+        let [files_area, msg_area] =
+            Layout::horizontal([Constraint::Percentage(46), Constraint::Percentage(54)])
+                .areas(body_area);
 
+        let header_block = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(self.theme.accent_style())
+            .padding(Padding::horizontal(1));
+        let header_inner = header_block.inner(header_area);
+        f.render_widget(header_block, header_area);
+        let header_line = Line::from(vec![
+            Span::styled("yeti", self.theme.accent_style()),
+            Span::styled("   ", self.theme.dim_style()),
+            Span::styled(branch, self.theme.fg_style()),
+            Span::styled("   ", self.theme.fg_style()),
+            Span::styled(format!("{} files", files.len()), self.theme.dim_style()),
+            Span::styled("  ", self.theme.dim_style()),
+            Span::styled(format!("+{}", total_add), self.theme.green_style()),
+            Span::styled(" ", self.theme.dim_style()),
+            Span::styled(format!("-{}", total_del), self.theme.red_style()),
+            Span::styled("   ", self.theme.dim_style()),
+            Span::styled(status, status_style),
+        ]);
+        f.render_widget(Paragraph::new(header_line), header_inner);
+
+        let files_block = Block::bordered()
+            .title(Span::styled(" changes ", self.theme.dim_style()))
+            .border_type(BorderType::Rounded)
+            .border_style(self.theme.dim_style())
+            .padding(Padding::new(1, 1, 0, 0));
+        let files_inner = files_block.inner(files_area);
+        f.render_widget(files_block, files_area);
+
+        let path_width = (files_inner.width.saturating_sub(14) as usize).clamp(16, 52);
+        let mut file_lines = vec![Line::from(vec![
+            Span::styled("st ", self.theme.dim_style()),
+            Span::styled(
+                format!("{:<width$}", "file", width = path_width),
+                self.theme.dim_style(),
+            ),
+            Span::styled(" +", self.theme.dim_style()),
+            Span::styled("  -", self.theme.dim_style()),
+        ])];
+
+        for file in files.iter().take(10) {
+            let (status_tag, status_style) = match file.status {
+                crate::prompt::FileStatus::Added => ("A", self.theme.green_style()),
+                crate::prompt::FileStatus::Deleted => ("D", self.theme.red_style()),
+                crate::prompt::FileStatus::Renamed => ("R", self.theme.accent_style()),
+                crate::prompt::FileStatus::Modified => ("M", self.theme.yellow_style()),
+            };
+            let path_display = ellipsize_path(&file.path, path_width);
+            let add_text = if file.additions > 0 {
+                format!("+{}", file.additions)
+            } else {
+                "-".to_string()
+            };
+            let del_text = if file.deletions > 0 {
+                format!("-{}", file.deletions)
+            } else {
+                "-".to_string()
+            };
+            let add_style = if file.additions > 0 {
+                self.theme.green_style()
+            } else {
+                self.theme.dim_style()
+            };
+            let del_style = if file.deletions > 0 {
+                self.theme.red_style()
+            } else {
+                self.theme.dim_style()
+            };
+
+            file_lines.push(Line::from(vec![
+                Span::styled(format!("{:<2} ", status_tag), status_style),
+                Span::styled(
+                    format!("{:<width$}", path_display, width = path_width),
+                    self.theme.fg_style(),
+                ),
+                Span::styled(format!("{:>3}", add_text), add_style),
+                Span::styled(format!("{:>4}", del_text), del_style),
+            ]));
+        }
+
+        if files.len() > 10 {
+            file_lines.push(Line::from(vec![Span::styled(
+                format!("... {} more files", files.len() - 10),
+                self.theme.dim_style(),
+            )]));
+        }
+        f.render_widget(
+            Paragraph::new(file_lines).wrap(Wrap { trim: true }),
+            files_inner,
+        );
+
+        let msg_block = Block::bordered()
+            .title(Span::styled(" commit message ", self.theme.dim_style()))
+            .border_type(BorderType::Rounded)
+            .border_style(self.theme.dim_style())
+            .padding(Padding::new(1, 1, 0, 0));
+        let msg_inner = msg_block.inner(msg_area);
+        f.render_widget(msg_block, msg_area);
+
+        let mut msg_lines = Vec::new();
         let mut first = true;
-        for line in message.lines() {
+        for line in message.lines().take(12) {
             if first {
-                msg_lines.push(Line::from(vec![
-                    Span::styled("  ", self.theme.fg_style()),
-                    Span::styled(line, self.theme.accent_style()),
-                ]));
+                msg_lines.push(Line::from(vec![Span::styled(
+                    line,
+                    self.theme.accent_style(),
+                )]));
                 first = false;
             } else if line.is_empty() {
                 msg_lines.push(Line::from(""));
             } else {
-                msg_lines.push(Line::from(vec![
-                    Span::styled("  ", self.theme.fg_style()),
-                    Span::styled(line, self.theme.fg_style()),
-                ]));
+                msg_lines.push(Line::from(vec![Span::styled(line, self.theme.fg_style())]));
             }
         }
+        if msg_lines.is_empty() {
+            msg_lines.push(Line::from(Span::styled(
+                "waiting for generated message...",
+                self.theme.dim_style(),
+            )));
+        }
+        f.render_widget(
+            Paragraph::new(msg_lines).wrap(Wrap { trim: false }),
+            msg_inner,
+        );
 
-        f.render_widget(Paragraph::new(msg_lines), msg_area);
+        let footer_block = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(status_style)
+            .padding(Padding::horizontal(1));
+        let footer_inner = footer_block.inner(footer_area);
+        f.render_widget(footer_block, footer_area);
+        let footer_line = Line::from(vec![
+            Span::styled(status, status_style),
+            Span::styled("  |  ", self.theme.dim_style()),
+            Span::styled("Esc/Q exit", self.theme.dim_style()),
+        ]);
+        f.render_widget(Paragraph::new(footer_line), footer_inner);
     }
 }
 
 fn generation_status(started_at: Instant, generated: &str) -> String {
-    const FRAMES: [&str; 4] = ["-", "\\", "|", "/"];
+    const FRAMES: [&str; 8] = ["⠋", "⠙", "⠚", "⠞", "⠖", "⠦", "⠴", "⠸"];
     let elapsed = started_at.elapsed();
     let frame = FRAMES[((elapsed.as_millis() / 200) as usize) % FRAMES.len()];
     let elapsed_s = elapsed.as_secs();
@@ -677,4 +698,18 @@ fn generation_status(started_at: Instant, generated: &str) -> String {
             generated.chars().count()
         )
     }
+}
+
+fn ellipsize_path(path: &str, max_chars: usize) -> String {
+    if max_chars == 0 || path.chars().count() <= max_chars {
+        return path.to_string();
+    }
+    if max_chars <= 3 {
+        return ".".repeat(max_chars);
+    }
+
+    let tail_len = max_chars - 3;
+    let mut tail: Vec<char> = path.chars().rev().take(tail_len).collect();
+    tail.reverse();
+    format!("...{}", tail.into_iter().collect::<String>())
 }

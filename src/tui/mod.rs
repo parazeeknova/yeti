@@ -61,7 +61,7 @@ impl Tui {
 
         println!();
         println!(
-            "  \x1b[1m\x1b[38;5;208myeti\x1b[0m \x1b[38;5;109m{}\x1b[0m",
+            "  \x1b[1m\x1b[38;5;208myeti\x1b[0m \x1b[38;5;246m\x1b[0m \x1b[38;5;109m{}\x1b[0m",
             result.branch
         );
         println!();
@@ -70,18 +70,18 @@ impl Tui {
         table.load_preset(UTF8_FULL);
 
         table.set_header(vec![
-            Cell::new("status").fg(dim).add_attribute(Attribute::Bold),
+            Cell::new("st").fg(dim).add_attribute(Attribute::Bold),
             Cell::new("file").fg(dim).add_attribute(Attribute::Bold),
-            Cell::new("+").fg(dim).add_attribute(Attribute::Bold),
-            Cell::new("-").fg(dim).add_attribute(Attribute::Bold),
+            Cell::new("add").fg(dim).add_attribute(Attribute::Bold),
+            Cell::new("del").fg(dim).add_attribute(Attribute::Bold),
         ]);
 
         for file in result.files.iter().take(10) {
             let (status_text, status_color) = match file.status {
-                crate::prompt::FileStatus::Added => ("added", green),
-                crate::prompt::FileStatus::Deleted => ("deleted", red),
-                crate::prompt::FileStatus::Renamed => ("renamed", yellow),
-                crate::prompt::FileStatus::Modified => ("modified", orange),
+                crate::prompt::FileStatus::Added => ("A", green),
+                crate::prompt::FileStatus::Deleted => ("D", red),
+                crate::prompt::FileStatus::Renamed => ("R", yellow),
+                crate::prompt::FileStatus::Modified => ("M", orange),
             };
 
             let path_display = if file.path.len() > 50 {
@@ -123,7 +123,7 @@ impl Tui {
         println!();
 
         let status = if result.dry_run {
-            "\x1b[38;5;214mscent marked\x1b[0m"
+            "\x1b[38;5;214mscent marked (dry-run)\x1b[0m"
         } else {
             "\x1b[38;5;142mterritory marked\x1b[0m"
         };
@@ -164,7 +164,8 @@ impl Tui {
             .unwrap_or(40)
             .min(max_width);
 
-        println!("  {}┌{}┐{}", dim_code, "─".repeat(max_msg_len + 2), reset);
+        println!("  {}commit message{}", dim_code, reset);
+        println!("  {}╭{}╮{}", dim_code, "─".repeat(max_msg_len + 2), reset);
 
         for (i, line) in wrapped_lines.iter().enumerate() {
             let line_len = line.chars().count();
@@ -177,7 +178,7 @@ impl Tui {
             println!("{}│{}", " ".repeat(padding), reset);
         }
 
-        println!("  {}└{}┘{}", dim_code, "─".repeat(max_msg_len + 2), reset);
+        println!("  {}╰{}╯{}", dim_code, "─".repeat(max_msg_len + 2), reset);
 
         println!();
     }

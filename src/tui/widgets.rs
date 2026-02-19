@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, BorderType, Clear, Paragraph, Wrap},
 };
 
 pub fn draw_key_input(
@@ -49,9 +49,10 @@ pub fn draw_key_input(
         theme.dim_style(),
     )));
 
-    let para = Paragraph::new(lines).block(
-        Block::default()
-            .borders(Borders::ALL)
+    let para = Paragraph::new(lines).wrap(Wrap { trim: true }).block(
+        Block::bordered()
+            .title(Span::styled(" credentials ", theme.accent_style()))
+            .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(theme.dim)),
     );
     f.render_widget(para, area);
@@ -75,9 +76,10 @@ pub fn draw_error(f: &mut Frame, theme: &Theme, message: &str, retryable: bool) 
     };
     lines.push(Line::from(Span::styled(hint, theme.dim_style())));
 
-    let para = Paragraph::new(lines).block(
-        Block::default()
-            .borders(Borders::ALL)
+    let para = Paragraph::new(lines).wrap(Wrap { trim: true }).block(
+        Block::bordered()
+            .title(Span::styled(" error ", theme.red_style()))
+            .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(theme.red)),
     );
     f.render_widget(para, area);

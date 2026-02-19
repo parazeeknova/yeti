@@ -6,7 +6,7 @@ mod git;
 mod prompt;
 mod tui;
 
-use args::Args;
+use args::{Args, print_help};
 use clap::Parser;
 use error::Result;
 use tui::{App, Tui};
@@ -20,6 +20,12 @@ fn main() {
 
 fn run() -> Result<()> {
     let args: Args = Args::parse();
+
+    if args.help {
+        print_help();
+        std::process::exit(0);
+    }
+
     let mut tui: Tui = Tui::new()?;
     let mut app: App = App::new(args)?;
     app.run(&mut tui)?;

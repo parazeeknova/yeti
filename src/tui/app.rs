@@ -4,7 +4,7 @@ use crate::config::{self, Config};
 use crate::error::Result;
 use crate::git::{GitRepo, StagedSummary, unstage_all_with_git_cli};
 use crate::prompt::{self, FileInfo};
-use crate::tui::{Theme, Tui, draw_error, draw_key_input};
+use crate::tui::{Theme, Tui, draw_error, draw_key_input, draw_status_panel};
 use crossterm::event::{Event, KeyCode};
 use ratatui::{
     Frame,
@@ -447,31 +447,28 @@ impl App {
                 draw_key_input(f, &self.theme, input, *cursor, error.as_deref());
             }
             AppState::ApiKeyValidating => {
-                let lines = vec![
-                    Line::from(""),
-                    Line::from(vec![Span::styled("  yeti ", self.theme.accent_style())]),
-                    Line::from(""),
-                    Line::from(vec![Span::styled(
-                        "  validating API key...",
-                        self.theme.accent_style(),
-                    )]),
-                ];
-                f.render_widget(Paragraph::new(lines), f.area());
+                draw_status_panel(
+                    f,
+                    &self.theme,
+                    " onboarding ",
+                    "validating credentials",
+                    "Checking your API key against the provider.",
+                    "Please wait  ·  Esc/Q exit",
+                );
             }
             AppState::Staging { branch } => {
-                let lines = vec![
-                    Line::from(""),
-                    Line::from(vec![
-                        Span::styled("  yeti ", self.theme.accent_style()),
-                        Span::styled(branch.as_str(), self.theme.fg_style()),
-                    ]),
-                    Line::from(""),
-                    Line::from(vec![Span::styled(
-                        "  sniffing out changes...",
-                        self.theme.accent_style(),
-                    )]),
-                ];
-                f.render_widget(Paragraph::new(lines), f.area());
+                let detail = format!(
+                    "Branch: {}  ·  staging changes and building commit context.",
+                    branch
+                );
+                draw_status_panel(
+                    f,
+                    &self.theme,
+                    " commit prep ",
+                    "sniffing out changes",
+                    &detail,
+                    "Please wait  ·  Esc/Q exit",
+                );
             }
             AppState::Generating {
                 branch,

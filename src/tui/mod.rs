@@ -4,7 +4,7 @@ mod widgets;
 
 pub use app::{App, AppResult};
 pub use theme::Theme;
-pub use widgets::{draw_error, draw_key_input};
+pub use widgets::{draw_error, draw_key_input, draw_status_panel};
 
 use crate::error::Result;
 use comfy_table::{Attribute, Cell, Color, Table, presets::UTF8_FULL};

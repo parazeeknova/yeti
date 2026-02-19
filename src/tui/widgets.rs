@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     style::Style,
     text::{Line, Span},
-    widgets::{Block, BorderType, Clear, Paragraph, Wrap},
+    widgets::{Block, BorderType, Clear, Padding, Paragraph, Wrap},
 };
 
 pub fn draw_key_input(
@@ -14,7 +14,7 @@ pub fn draw_key_input(
     cursor: usize,
     error: Option<&str>,
 ) {
-    let area = centered_rect(50, 30, f.area());
+    let area = centered_rect(66, 42, f.area());
     f.render_widget(Clear, area);
 
     let masked = if input.is_empty() {
@@ -30,12 +30,16 @@ pub fn draw_key_input(
     };
 
     let mut lines = vec![
+        Line::from(Span::styled("yeti setup", theme.accent_style())),
         Line::from(Span::styled(
-            "yeti  mark your territory",
-            theme.accent_style(),
+            "No API key found. Add your Cerebras key to start generating commit messages.",
+            theme.fg_style(),
         )),
         Line::from(""),
-        Line::from(Span::styled(masked, theme.fg_style())),
+        Line::from(vec![
+            Span::styled("key ", theme.dim_style()),
+            Span::styled(masked, theme.fg_style()),
+        ]),
     ];
 
     if let Some(e) = error {
@@ -45,44 +49,83 @@ pub fn draw_key_input(
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "cloud.cerebras.ai  ·  Enter to save  ·  Esc to retreat",
+        "cloud.cerebras.ai/account/api-keys",
+        theme.dim_style(),
+    )));
+    lines.push(Line::from(Span::styled(
+        "Enter save  ·  Esc cancel",
         theme.dim_style(),
     )));
 
     let para = Paragraph::new(lines).wrap(Wrap { trim: true }).block(
         Block::bordered()
-            .title(Span::styled(" credentials ", theme.accent_style()))
+            .title(Span::styled(" first run ", theme.accent_style()))
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(theme.dim)),
+            .border_style(Style::default().fg(theme.accent))
+            .padding(Padding::new(1, 1, 0, 0)),
     );
     f.render_widget(para, area);
 }
 
 pub fn draw_error(f: &mut Frame, theme: &Theme, message: &str, retryable: bool) {
-    let area = centered_rect(50, 25, f.area());
+    let area = centered_rect(66, 38, f.area());
     f.render_widget(Clear, area);
 
     let mut lines = vec![
-        Line::from(Span::styled("yeti  lost the scent", theme.red_style())),
-        Line::from(""),
-        Line::from(Span::styled(message, theme.fg_style())),
+        Line::from(Span::styled("yeti hit a snag", theme.red_style())),
         Line::from(""),
     ];
+    lines.extend(
+        message
+            .lines()
+            .map(|line| Line::from(Span::styled(line, theme.fg_style()))),
+    );
+    lines.push(Line::from(""));
 
     let hint = if retryable {
-        "R to track again  ·  K for new key  ·  Q to retreat"
+        "R retry  ·  K new key  ·  Q exit"
     } else {
-        "Q to retreat"
+        "Q exit"
     };
     lines.push(Line::from(Span::styled(hint, theme.dim_style())));
 
     let para = Paragraph::new(lines).wrap(Wrap { trim: true }).block(
         Block::bordered()
-            .title(Span::styled(" error ", theme.red_style()))
+            .title(Span::styled(" operation failed ", theme.red_style()))
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(theme.red)),
+            .border_style(Style::default().fg(theme.red))
+            .padding(Padding::new(1, 1, 0, 0)),
     );
     f.render_widget(para, area);
+}
+
+pub fn draw_status_panel(
+    f: &mut Frame,
+    theme: &Theme,
+    panel_title: &str,
+    headline: &str,
+    detail: &str,
+    hint: &str,
+) {
+    let area = centered_rect(66, 34, f.area());
+    f.render_widget(Clear, area);
+
+    let block = Block::bordered()
+        .title(Span::styled(panel_title, theme.accent_style()))
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme.accent))
+        .padding(Padding::new(1, 1, 0, 0));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let lines = vec![
+        Line::from(Span::styled(headline, theme.accent_style())),
+        Line::from(""),
+        Line::from(Span::styled(detail, theme.fg_style())),
+        Line::from(""),
+        Line::from(Span::styled(hint, theme.dim_style())),
+    ];
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

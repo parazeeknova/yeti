@@ -1,4 +1,5 @@
 use crate::args::Args;
+use crate::args::MASCOT_MINI;
 use crate::cerebras;
 use crate::config::{self, Config};
 use crate::error::Result;
@@ -539,7 +540,7 @@ impl App {
         let header_inner = header_block.inner(header_area);
         f.render_widget(header_block, header_area);
         let header_line = Line::from(vec![
-            Span::styled("yeti", self.theme.accent_style()),
+            Span::styled(format!("{} yeti", MASCOT_MINI), self.theme.accent_style()),
             Span::styled("   ", self.theme.dim_style()),
             Span::styled(branch, self.theme.fg_style()),
             Span::styled("   ", self.theme.fg_style()),
@@ -664,6 +665,8 @@ impl App {
         let footer_inner = footer_block.inner(footer_area);
         f.render_widget(footer_block, footer_area);
         let footer_line = Line::from(vec![
+            Span::styled(MASCOT_MINI, self.theme.dim_style()),
+            Span::styled("  |  ", self.theme.dim_style()),
             Span::styled(status, status_style),
             Span::styled("  |  ", self.theme.dim_style()),
             Span::styled("Esc/Q exit", self.theme.dim_style()),

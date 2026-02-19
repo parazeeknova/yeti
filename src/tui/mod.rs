@@ -6,6 +6,7 @@ pub use app::{App, AppResult};
 pub use theme::Theme;
 pub use widgets::{draw_error, draw_key_input, draw_status_panel};
 
+use crate::args::{MASCOT_LINES, MASCOT_MINI};
 use crate::error::Result;
 use comfy_table::{Attribute, Cell, Color, Table, presets::UTF8_FULL};
 use crossterm::event::{self, Event};
@@ -61,8 +62,8 @@ impl Tui {
 
         println!();
         println!(
-            "  \x1b[1m\x1b[38;5;208myeti\x1b[0m \x1b[38;5;246m\x1b[0m \x1b[38;5;109m{}\x1b[0m",
-            result.branch
+            "  \x1b[1m\x1b[38;5;208m{} yeti\x1b[0m \x1b[38;5;246m\x1b[0m \x1b[38;5;109m{}\x1b[0m",
+            MASCOT_MINI, result.branch
         );
         println!();
 
@@ -133,6 +134,7 @@ impl Tui {
         println!();
 
         let dim_code = "\x1b[38;5;246m";
+        let mascot_code = "\x1b[1m\x1b[38;5;208m";
         let reset = "\x1b[0m";
         let bold_code = "\x1b[1m";
 
@@ -164,21 +166,62 @@ impl Tui {
             .unwrap_or(40)
             .min(max_width);
 
-        println!("  {}commit message{}", dim_code, reset);
-        println!("  {}╭{}╮{}", dim_code, "─".repeat(max_msg_len + 2), reset);
-
+        let mut msg_box_lines = Vec::new();
+        msg_box_lines.push(format!(
+            "{}╭{}╮{}",
+            dim_code,
+            "─".repeat(max_msg_len + 2),
+            reset
+        ));
         for (i, line) in wrapped_lines.iter().enumerate() {
             let line_len = line.chars().count();
             let padding = max_msg_len.saturating_sub(line_len) + 1;
             if i == 0 {
-                print!("  {}│{} {}{}{}", dim_code, reset, bold_code, line, reset);
+                msg_box_lines.push(format!(
+                    "{}│{} {}{}{}{}│{}",
+                    dim_code,
+                    reset,
+                    bold_code,
+                    line,
+                    reset,
+                    " ".repeat(padding),
+                    reset
+                ));
             } else {
-                print!("  {}│{} {}", dim_code, reset, line);
+                msg_box_lines.push(format!(
+                    "{}│{} {}{}│{}",
+                    dim_code,
+                    reset,
+                    line,
+                    " ".repeat(padding),
+                    reset
+                ));
             }
-            println!("{}│{}", " ".repeat(padding), reset);
         }
+        msg_box_lines.push(format!(
+            "{}╰{}╯{}",
+            dim_code,
+            "─".repeat(max_msg_len + 2),
+            reset
+        ));
 
-        println!("  {}╰{}╯{}", dim_code, "─".repeat(max_msg_len + 2), reset);
+        println!(
+            "  {}commit message{}   {}{}{}",
+            dim_code, reset, mascot_code, MASCOT_MINI, reset
+        );
+        let rows = msg_box_lines.len().max(MASCOT_LINES.len());
+        for i in 0..rows {
+            let left = msg_box_lines
+                .get(i)
+                .cloned()
+                .unwrap_or_else(|| " ".repeat(max_msg_len + 4));
+            let mascot = MASCOT_LINES.get(i).copied().unwrap_or("");
+            if mascot.is_empty() {
+                println!("  {}", left);
+            } else {
+                println!("  {}   {}{}{}", left, mascot_code, mascot, reset);
+            }
+        }
 
         println!();
     }

@@ -1,19 +1,31 @@
 use clap::Parser;
 
+pub const MASCOT_LINES: [&str; 9] = [
+    "┏━━━━━━━━━━━┓",
+    "┃ ┌──┐ ┌──┐ ┃",
+    "┃ │▓·│ │▓·│ ┃",
+    "┃ └──┘ └──┘ ┃",
+    "┃  ┌─┐ ┌─┐  ┃",
+    "┃  └─┘ └─┘  ┃",
+    "┣━━━━━━━━━━━┫",
+    "┃ ▌▌▌▌▌▌▌▌▌ ┃",
+    "┗━━━━━━━━━━━┛",
+];
+
+pub const MASCOT_MINI: &str = "┌──┐┌──┐ ▌▌▌";
+
 pub fn print_help() {
     let orange = "\x1b[38;5;208m";
     let yellow = "\x1b[38;5;214m";
     let green = "\x1b[38;5;142m";
     let blue = "\x1b[38;5;109m";
     let dim = "\x1b[38;5;246m";
-    let white = "\x1b[38;5;255m";
     let bold = "\x1b[1m";
     let reset = "\x1b[0m";
 
     let o = orange;
     let b = bold;
     let r = reset;
-    let w = white;
     let d = dim;
 
     // Face: all heavy box-drawing, no mixed weights
@@ -30,17 +42,39 @@ pub fn print_help() {
     //  ┗━━━━━━━━━━━┛
 
     println!();
-    println!("  {o}{b}┏━━━━━━━━━━━┓{r}  {o}{b}██╗   ██╗███████╗████████╗██╗{r}");
-    println!("  {o}{b}┃ ┌──┐ ┌──┐ ┃{r}  {o}{b}╚██╗ ██╔╝██╔════╝╚══██╔══╝██║{r}");
     println!(
-        "  {o}{b}┃ │{r}{w}▓·{r}{o}{b}│ │{r}{w}▓·{r}{o}{b}│ ┃{r}  {o}{b} ╚████╔╝ █████╗     ██║   ██║{r}"
+        "  {o}{b}{}{r}  {o}{b}██╗   ██╗███████╗████████╗██╗{r}",
+        MASCOT_LINES[0]
     );
-    println!("  {o}{b}┃ └──┘ └──┘ ┃{r}  {o}{b}  ╚██╔╝  ██╔══╝     ██║   ██║{r}");
-    println!("  {o}{b}┃  ┌─┐ ┌─┐  ┃{r}  {o}{b}   ██║   ███████╗   ██║   ██║{r}");
-    println!("  {o}{b}┃  └─┘ └─┘  ┃{r}  {o}{b}   ╚═╝   ╚══════╝   ╚═╝   ╚═╝{r}");
-    println!("  {o}{b}┣━━━━━━━━━━━┫{r}  {d}domesticate your diff{r}");
-    println!("  {o}{b}┃ ▌▌▌▌▌▌▌▌▌ ┃{r}  {d}AI-powered git commits{r}");
-    println!("  {o}{b}┗━━━━━━━━━━━┛{r}");
+    println!(
+        "  {o}{b}{}{r}  {o}{b}╚██╗ ██╔╝██╔════╝╚══██╔══╝██║{r}",
+        MASCOT_LINES[1]
+    );
+    println!(
+        "  {o}{b}{}{r}  {o}{b} ╚████╔╝ █████╗     ██║   ██║{r}",
+        MASCOT_LINES[2]
+    );
+    println!(
+        "  {o}{b}{}{r}  {o}{b}  ╚██╔╝  ██╔══╝     ██║   ██║{r}",
+        MASCOT_LINES[3]
+    );
+    println!(
+        "  {o}{b}{}{r}  {o}{b}   ██║   ███████╗   ██║   ██║{r}",
+        MASCOT_LINES[4]
+    );
+    println!(
+        "  {o}{b}{}{r}  {o}{b}   ╚═╝   ╚══════╝   ╚═╝   ╚═╝{r}",
+        MASCOT_LINES[5]
+    );
+    println!(
+        "  {o}{b}{}{r}  {d}domesticate your diff{r}",
+        MASCOT_LINES[6]
+    );
+    println!(
+        "  {o}{b}{}{r}  {d}AI-powered git commits{r}",
+        MASCOT_LINES[7]
+    );
+    println!("  {o}{b}{}{r}", MASCOT_LINES[8]);
     println!();
 
     // Usage

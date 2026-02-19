@@ -1,3 +1,4 @@
+use crate::args::{MASCOT_LINES, MASCOT_MINI};
 use crate::tui::Theme;
 use ratatui::{
     Frame,
@@ -30,7 +31,11 @@ pub fn draw_key_input(
     };
 
     let mut lines = vec![
-        Line::from(Span::styled("yeti setup", theme.accent_style())),
+        Line::from(Span::styled(
+            format!("{}  yeti setup", MASCOT_MINI),
+            theme.accent_style(),
+        )),
+        Line::from(Span::styled(MASCOT_LINES[1], theme.dim_style())),
         Line::from(Span::styled(
             "No API key found. Add your Cerebras key to start generating commit messages.",
             theme.fg_style(),
@@ -72,7 +77,11 @@ pub fn draw_error(f: &mut Frame, theme: &Theme, message: &str, retryable: bool) 
     f.render_widget(Clear, area);
 
     let mut lines = vec![
-        Line::from(Span::styled("yeti hit a snag", theme.red_style())),
+        Line::from(Span::styled(
+            format!("{}  yeti hit a snag", MASCOT_MINI),
+            theme.red_style(),
+        )),
+        Line::from(Span::styled(MASCOT_LINES[7], theme.dim_style())),
         Line::from(""),
     ];
     lines.extend(
@@ -119,7 +128,11 @@ pub fn draw_status_panel(
     f.render_widget(block, area);
 
     let lines = vec![
-        Line::from(Span::styled(headline, theme.accent_style())),
+        Line::from(Span::styled(
+            format!("{}  {}", MASCOT_MINI, headline),
+            theme.accent_style(),
+        )),
+        Line::from(Span::styled(MASCOT_LINES[6], theme.dim_style())),
         Line::from(""),
         Line::from(Span::styled(detail, theme.fg_style())),
         Line::from(""),

@@ -59,7 +59,7 @@ pub fn generate_commit_message(
                 content: user_prompt.to_string(),
             },
         ],
-        temperature: Some(0.3),
+        temperature: Some(0.0),
         max_completion_tokens: Some(500),
         stream: true,
     };

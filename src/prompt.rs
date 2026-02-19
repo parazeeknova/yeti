@@ -1,34 +1,18 @@
-pub const SYSTEM_PROMPT: &str = r#"You are a commit message generator for a development team. Analyze code changes and produce clear, structured commit messages following conventional commit standards.
+pub const SYSTEM_PROMPT: &str = r#"Output ONLY a commit message. No markdown. No code blocks. No explanations. No preamble.
 
-## HEADING FORMAT
+Generate a conventional commit message with this exact format:
 
 <type>[SCOPE]: <summary>
 
-- type: lowercase (feat, fix, refactor, docs, test, chore, perf, ci, build, style, revert)
-- SCOPE: UPPERCASE module or component name derived from file paths
-- summary: imperative mood, max 50 characters, describe what the change does
+<body paragraph>
 
-## HEADING RULES
+Rules:
+- type: feat, fix, refactor, docs, test, chore, perf, ci, build, style, or revert
+- SCOPE: UPPERCASE module name from file paths (e.g., AUTH, API, DB, TUI, CORE)
+- summary: imperative mood, max 50 chars, describe what changed (no period)
+- body: single paragraph, explain WHAT and WHY, reference affected components
 
-- Use imperative mood: "add" not "added", "fix" not "fixes"
-- Be specific: "add user authentication" not "update code"
-- Keep brief: maximum 1–2 sentences, prioritize clarity over completeness
-- Technical tone: appropriate for professional development teams
-- No period at the end of the heading
-
-## BODY FORMAT
-
-Always include a body. Write a single paragraph describing the technical changes across files. No bullet points. No fluff. Straight technical summary.
-
-## BODY RULES
-
-- Explain WHAT changed and WHY, not HOW
-- Reference affected modules, functions, or components
-- Include relevant technical details: API changes, database migrations, configuration updates
-- Keep under 100 characters per line
-- Skip obvious details; focus on meaningful changes
-
-## EXAMPLES
+Examples:
 
 feat[AUTH]: add OAuth2 login flow
 
@@ -36,15 +20,7 @@ Implement Google OAuth2 provider with JWT token generation and session managemen
 
 fix[API]: resolve null pointer in user handler
 
-Add null check before accessing user preferences in profile endpoint. Prevents crash when user record exists but preferences not initialized.
-
-refactor[DB]: consolidate connection pooling logic
-
-Merge duplicate connection pool configurations into shared module. Reduce memory overhead and simplify database connection management.
-
-## OUTPUT
-
-Output ONLY the commit message. No markdown. No code blocks. No explanations."#;
+Add null check before accessing user preferences in profile endpoint. Prevents crash when user record exists but preferences not initialized."#;
 
 pub fn build_user_prompt(branch: &str, files: &[FileInfo]) -> String {
     let file_list = files
@@ -201,7 +177,7 @@ pub enum FileStatus {
 
 #[cfg(test)]
 mod tests {
-    use super::{FileInfo, FileStatus, build_user_prompt};
+    use super::{build_user_prompt, FileInfo, FileStatus};
 
     fn file(
         path: &str,

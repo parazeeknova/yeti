@@ -1,6 +1,8 @@
 use crate::error::{Result, YetiError};
 use crate::prompt::{FileInfo, FileStatus};
-use git2::{DiffOptions, Repository};
+use git2::{DiffFindOptions, DiffOptions, Repository};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 pub struct GitRepo {
     repo: Repository,
@@ -47,21 +49,23 @@ impl GitRepo {
         let mut opts = DiffOptions::new();
         opts.include_untracked(true).recurse_untracked_dirs(true);
 
-        let diff = if let Some(tree) = &head_tree {
+        let mut diff = if let Some(tree) = &head_tree {
             self.repo
                 .diff_tree_to_index(Some(tree), None, Some(&mut opts))?
         } else {
             self.repo.diff_tree_to_index(None, None, Some(&mut opts))?
         };
 
-        let mut files = Vec::new();
+        let mut find_opts = DiffFindOptions::new();
+        find_opts.renames(true);
+        diff.find_similar(Some(&mut find_opts))?;
+
+        let files: RefCell<Vec<FileInfo>> = RefCell::new(Vec::new());
+        let file_index: RefCell<HashMap<String, usize>> = RefCell::new(HashMap::new());
 
         diff.foreach(
             &mut |delta, _| {
-                let path = delta
-                    .new_file()
-                    .path()
-                    .map(|p| p.to_string_lossy().to_string());
+                let path = delta_path(&delta);
                 if let Some(path) = path {
                     let status = match delta.status() {
                         git2::Delta::Added => FileStatus::Added,
@@ -69,88 +73,62 @@ impl GitRepo {
                         git2::Delta::Renamed => FileStatus::Renamed,
                         _ => FileStatus::Modified,
                     };
+                    let old_path = match status {
+                        FileStatus::Renamed => delta
+                            .old_file()
+                            .path()
+                            .map(|p| p.to_string_lossy().to_string()),
+                        _ => None,
+                    };
 
-                    files.push(FileInfo {
+                    let mut files_mut = files.borrow_mut();
+                    let index = files_mut.len();
+                    file_index.borrow_mut().insert(path.clone(), index);
+                    files_mut.push(FileInfo {
                         path,
                         additions: 0,
                         deletions: 0,
                         diff: String::new(),
                         status,
+                        old_path,
                     });
                 }
                 true
             },
             None,
             None,
-            None,
+            Some(&mut |delta, _hunk, line| {
+                let Some(path) = delta_path(&delta) else {
+                    return true;
+                };
+                let index = {
+                    let file_index_ref = file_index.borrow();
+                    file_index_ref.get(&path).copied()
+                };
+                let Some(index) = index else {
+                    return true;
+                };
+
+                let mut files_mut = files.borrow_mut();
+                match line.origin() {
+                    '+' => files_mut[index].additions += 1,
+                    '-' => files_mut[index].deletions += 1,
+                    _ => {}
+                }
+
+                if files_mut[index].diff.len() < 3000
+                    && let Ok(text) = std::str::from_utf8(line.content())
+                {
+                    let prefix = line.origin();
+                    files_mut[index]
+                        .diff
+                        .push_str(&format!("{}{}", prefix, text));
+                }
+                true
+            }),
         )?;
 
-        for file in &mut files {
-            let (add, del, diff_text) = self.get_file_stats(&file.path, file.status)?;
-            file.additions = add;
-            file.deletions = del;
-            file.diff = diff_text;
-        }
-
-        Ok(files)
-    }
-
-    fn get_file_stats(&self, path: &str, status: FileStatus) -> Result<(usize, usize, String)> {
-        let head_tree = self
-            .repo
-            .revparse_single("HEAD")
-            .ok()
-            .and_then(|o| o.peel_to_tree().ok());
-
-        let mut opts = DiffOptions::new();
-        opts.pathspec(path);
-
-        let diff = match status {
-            FileStatus::Added => {
-                let mut opts = DiffOptions::new();
-                opts.pathspec(path);
-                opts.include_untracked(true);
-                opts.recurse_untracked_dirs(true);
-
-                if let Some(tree) = &head_tree {
-                    self.repo
-                        .diff_tree_to_workdir(Some(tree), Some(&mut opts))?
-                } else {
-                    self.repo.diff_tree_to_workdir(None, Some(&mut opts))?
-                }
-            }
-            _ => {
-                if let Some(tree) = &head_tree {
-                    self.repo
-                        .diff_tree_to_workdir(Some(tree), Some(&mut opts))?
-                } else {
-                    self.repo.diff_tree_to_workdir(None, Some(&mut opts))?
-                }
-            }
-        };
-
-        let mut additions = 0;
-        let mut deletions = 0;
-        let mut diff_text = String::new();
-
-        diff.print(git2::DiffFormat::Patch, |_delta, _, line| {
-            match line.origin() {
-                '+' => additions += 1,
-                '-' => deletions += 1,
-                _ => {}
-            }
-
-            if diff_text.len() < 2000
-                && let Ok(text) = std::str::from_utf8(line.content())
-            {
-                let prefix = line.origin();
-                diff_text.push_str(&format!("{}{}", prefix, text));
-            }
-
-            true
-        })?;
-
-        Ok((additions, deletions, diff_text))
+        Ok(files.into_inner())
     }
 
     pub fn stage_all(&self) -> Result<()> {
@@ -159,6 +137,14 @@ impl GitRepo {
         index.write()?;
         Ok(())
     }
+}
+
+fn delta_path(delta: &git2::DiffDelta<'_>) -> Option<String> {
+    delta
+        .new_file()
+        .path()
+        .or_else(|| delta.old_file().path())
+        .map(|p| p.to_string_lossy().to_string())
 }
 
 pub fn commit_with_git_cli(title: &str, body: Option<&str>) -> Result<()> {
@@ -189,4 +175,149 @@ pub fn commit_with_git_cli(title: &str, body: Option<&str>) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn unstage_all_with_git_cli() -> Result<()> {
+    let output = std::process::Command::new("git")
+        .arg("reset")
+        .arg("--mixed")
+        .arg("--quiet")
+        .output()
+        .map_err(|e| YetiError::CommitFailed(format!("Failed to run git reset: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let msg = if !stderr.is_empty() {
+            stderr.to_string()
+        } else if !stdout.is_empty() {
+            stdout.to_string()
+        } else {
+            "Git reset failed".to_string()
+        };
+        return Err(YetiError::CommitFailed(msg));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GitRepo, Result};
+    use crate::prompt::FileStatus;
+    use git2::{Repository, Signature};
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn staged_summary_detects_rename_and_tracks_old_path() -> Result<()> {
+        let temp_dir = create_temp_repo_dir("rename");
+        let repo = init_repo_with_initial_commit(&temp_dir)?;
+
+        let old_path = temp_dir.join("src/file.txt");
+        let new_path = temp_dir.join("src/file_renamed.txt");
+        fs::rename(&old_path, &new_path)?;
+        write_file(&new_path, "one\ntwo\n")?;
+
+        {
+            let mut index = repo.index()?;
+            index.remove_path(Path::new("src/file.txt"))?;
+            index.add_path(Path::new("src/file_renamed.txt"))?;
+            index.write()?;
+        }
+
+        write_file(&new_path, "one\ntwo\nunstaged-extra\n")?;
+
+        let git_repo = GitRepo { repo };
+        let summary = git_repo.get_staged_summary()?;
+        let renamed = summary
+            .files
+            .iter()
+            .find(|f| f.path == "src/file_renamed.txt")
+            .expect("renamed file not found");
+
+        assert_eq!(renamed.status, FileStatus::Renamed);
+        assert_eq!(renamed.old_path.as_deref(), Some("src/file.txt"));
+        assert_eq!(renamed.additions, 0);
+        assert_eq!(renamed.deletions, 0);
+        assert!(!renamed.diff.contains("unstaged-extra"));
+
+        drop(git_repo);
+        let _ = fs::remove_dir_all(&temp_dir);
+        Ok(())
+    }
+
+    #[test]
+    fn staged_summary_uses_index_not_working_tree_for_patch() -> Result<()> {
+        let temp_dir = create_temp_repo_dir("staged-only");
+        let repo = init_repo_with_initial_commit(&temp_dir)?;
+        let file_path = temp_dir.join("src/file.txt");
+
+        write_file(&file_path, "one\ntwo\nstaged-only\n")?;
+        {
+            let mut index = repo.index()?;
+            index.add_path(Path::new("src/file.txt"))?;
+            index.write()?;
+        }
+
+        write_file(&file_path, "one\ntwo\nstaged-only\nunstaged-only\n")?;
+
+        let git_repo = GitRepo { repo };
+        let summary = git_repo.get_staged_summary()?;
+        let changed = summary
+            .files
+            .iter()
+            .find(|f| f.path == "src/file.txt")
+            .expect("staged file not found");
+
+        assert_eq!(changed.status, FileStatus::Modified);
+        assert!(changed.diff.contains("staged-only"));
+        assert!(!changed.diff.contains("unstaged-only"));
+
+        drop(git_repo);
+        let _ = fs::remove_dir_all(&temp_dir);
+        Ok(())
+    }
+
+    fn create_temp_repo_dir(suffix: &str) -> PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "yeti-git-tests-{suffix}-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).expect("failed to create temp directory");
+        dir
+    }
+
+    fn init_repo_with_initial_commit(path: &Path) -> Result<Repository> {
+        let repo = Repository::init(path)?;
+        let file_path = path.join("src/file.txt");
+        write_file(&file_path, "one\ntwo\n")?;
+
+        {
+            let mut index = repo.index()?;
+            index.add_path(Path::new("src/file.txt"))?;
+            index.write()?;
+        }
+
+        let tree_id = repo.index()?.write_tree()?;
+        let tree = repo.find_tree(tree_id)?;
+        let sig = Signature::now("yeti-tests", "yeti-tests@example.com")?;
+        repo.commit(Some("HEAD"), &sig, &sig, "initial commit", &tree, &[])?;
+        drop(tree);
+
+        Ok(repo)
+    }
+
+    fn write_file(path: &Path, content: &str) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, content)?;
+        Ok(())
+    }
 }

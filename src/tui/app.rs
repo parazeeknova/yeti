@@ -2,7 +2,7 @@ use crate::args::Args;
 use crate::cerebras;
 use crate::config::{self, Config};
 use crate::error::Result;
-use crate::git::{GitRepo, StagedSummary};
+use crate::git::{GitRepo, StagedSummary, unstage_all_with_git_cli};
 use crate::prompt::{self, FileInfo};
 use crate::tui::{Theme, Tui, draw_error, draw_key_input};
 use crossterm::event::{Event, KeyCode};
@@ -16,6 +16,9 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Instant;
 
+const NO_CHUNK_TIMEOUT_SECS: u64 = 45;
+const MAX_GENERATION_TIMEOUT_SECS: u64 = 120;
+
 #[derive(Debug, Clone)]
 pub enum AppState {
     ApiKeyInput {
@@ -23,6 +26,7 @@ pub enum AppState {
         cursor: usize,
         error: Option<String>,
     },
+    ApiKeyValidating,
     Staging {
         branch: String,
     },
@@ -30,6 +34,7 @@ pub enum AppState {
         branch: String,
         files: Vec<FileInfo>,
         generated: String,
+        started_at: Instant,
     },
     Committing {
         branch: String,
@@ -82,11 +87,15 @@ pub struct App {
 
 impl App {
     pub fn new(args: Args) -> Result<Self> {
+        if args.reset_cache {
+            config::clear_local_cache()?;
+        }
+
         let config = config::load()?;
         let api_key = config::get_effective_api_key(&config);
         let (event_tx, event_rx) = mpsc::channel();
 
-        let state = if args.reset_key || api_key.is_none() {
+        let state = if args.reset_cache || args.reset_key || api_key.is_none() {
             AppState::ApiKeyInput {
                 input: String::new(),
                 cursor: 0,
@@ -111,13 +120,32 @@ impl App {
     }
 
     pub fn run(&mut self, tui: &mut Tui) -> Result<()> {
-        self.start_staging();
+        if matches!(self.state, AppState::Staging { .. }) {
+            self.start_staging();
+        }
 
         loop {
             if let AppState::Done { done_at, .. } = &self.state
                 && done_at.elapsed().as_secs() >= 3
             {
                 break;
+            }
+
+            let generation_timed_out = matches!(
+                &self.state,
+                AppState::Generating {
+                    started_at,
+                    generated,
+                    ..
+                } if (generated.is_empty() && started_at.elapsed().as_secs() >= NO_CHUNK_TIMEOUT_SECS)
+                    || started_at.elapsed().as_secs() >= MAX_GENERATION_TIMEOUT_SECS
+            );
+            if generation_timed_out {
+                self.fail_with_cleanup(
+                    "Provider timed out while generating commit message. Press R to retry or K to re-enter API key."
+                        .into(),
+                    true,
+                );
             }
 
             if let Some(event) = tui.poll_event(50)
@@ -183,10 +211,26 @@ impl App {
             branch: branch.clone(),
             files: files.clone(),
             generated: String::new(),
+            started_at: Instant::now(),
         };
 
         let tx = self.event_tx.clone();
         thread::spawn(move || {
+            if let Err(e) = cerebras::validate_api_key(&api_key) {
+                let _ = tx.send(AppEvent::GenerationFailed(format!(
+                    "API key validation failed before generation: {}",
+                    e
+                )));
+                return;
+            }
+            if let Err(e) = cerebras::check_provider_ready(&api_key, &model) {
+                let _ = tx.send(AppEvent::GenerationFailed(format!(
+                    "Provider readiness check failed: {}",
+                    e
+                )));
+                return;
+            }
+
             let result = cerebras::generate_commit_message(&api_key, &model, &user_prompt, |c| {
                 let _ = tx.send(AppEvent::GenerationChunk(c.to_string()));
             });
@@ -229,6 +273,7 @@ impl App {
                     _ => {}
                 }
             }
+            AppState::ApiKeyValidating => {}
             AppState::Error { retryable, .. } => match code {
                 KeyCode::Char('r') | KeyCode::Char('R') if *retryable => {
                     self.state = AppState::Staging {
@@ -253,6 +298,7 @@ impl App {
         match event {
             AppEvent::ApiKeyEntered(key) => {
                 self.api_key = Some(key.clone());
+                self.state = AppState::ApiKeyValidating;
                 let tx = self.event_tx.clone();
                 thread::spawn(move || {
                     let _ = tx.send(match cerebras::validate_api_key(&key) {
@@ -281,10 +327,7 @@ impl App {
                 self.start_generation(summary);
             }
             AppEvent::StagingFailed(err) => {
-                self.state = AppState::Error {
-                    message: err,
-                    retryable: false,
-                };
+                self.fail_with_cleanup(err, false);
             }
             AppEvent::GenerationChunk(chunk) => {
                 if let AppState::Generating { generated, .. } = &mut self.state {
@@ -351,10 +394,7 @@ impl App {
                 }
             }
             AppEvent::GenerationFailed(err) => {
-                self.state = AppState::Error {
-                    message: err,
-                    retryable: true,
-                };
+                self.fail_with_cleanup(err, true);
             }
             AppEvent::CommitComplete => {
                 if let AppState::Committing {
@@ -372,12 +412,29 @@ impl App {
                 }
             }
             AppEvent::CommitFailed(err) => {
-                self.state = AppState::Error {
-                    message: err,
-                    retryable: false,
-                };
+                self.fail_with_cleanup(err, false);
             }
         }
+    }
+
+    fn fail_with_cleanup(&mut self, message: String, retryable: bool) {
+        let should_unstage = matches!(
+            self.state,
+            AppState::Staging { .. } | AppState::Generating { .. } | AppState::Committing { .. }
+        );
+        let final_message = if should_unstage {
+            match unstage_all_with_git_cli() {
+                Ok(_) => message,
+                Err(e) => format!("{}\nAlso failed to unstage changes: {}", message, e),
+            }
+        } else {
+            message
+        };
+
+        self.state = AppState::Error {
+            message: final_message,
+            retryable,
+        };
     }
 
     fn draw(&self, f: &mut Frame) {
@@ -388,6 +445,18 @@ impl App {
                 error,
             } => {
                 draw_key_input(f, &self.theme, input, *cursor, error.as_deref());
+            }
+            AppState::ApiKeyValidating => {
+                let lines = vec![
+                    Line::from(""),
+                    Line::from(vec![Span::styled("  yeti ", self.theme.accent_style())]),
+                    Line::from(""),
+                    Line::from(vec![Span::styled(
+                        "  validating API key...",
+                        self.theme.accent_style(),
+                    )]),
+                ];
+                f.render_widget(Paragraph::new(lines), f.area());
             }
             AppState::Staging { branch } => {
                 let lines = vec![
@@ -408,8 +477,10 @@ impl App {
                 branch,
                 files,
                 generated,
+                started_at,
             } => {
-                self.draw_main(f, branch, files, generated, "tracking...");
+                let status = generation_status(*started_at, generated);
+                self.draw_main(f, branch, files, generated, &status);
             }
             AppState::Committing {
                 branch,
@@ -580,5 +651,30 @@ impl App {
         }
 
         f.render_widget(Paragraph::new(msg_lines), msg_area);
+    }
+}
+
+fn generation_status(started_at: Instant, generated: &str) -> String {
+    const FRAMES: [&str; 4] = ["-", "\\", "|", "/"];
+    let elapsed = started_at.elapsed();
+    let frame = FRAMES[((elapsed.as_millis() / 200) as usize) % FRAMES.len()];
+    let elapsed_s = elapsed.as_secs();
+
+    if generated.is_empty() {
+        if elapsed_s >= 15 {
+            format!(
+                "tracking... {} {}s (waiting for provider response)",
+                frame, elapsed_s
+            )
+        } else {
+            format!("tracking... {} {}s", frame, elapsed_s)
+        }
+    } else {
+        format!(
+            "tracking... {} {}s, {} chars received",
+            frame,
+            elapsed_s,
+            generated.chars().count()
+        )
     }
 }

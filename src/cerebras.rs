@@ -3,8 +3,10 @@ use crate::error::{Result, YetiError};
 use crate::prompt::SYSTEM_PROMPT;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
+use std::time::Duration;
 
 const API_URL: &str = "https://api.cerebras.ai/v1/chat/completions";
+const REQUEST_TIMEOUT_SECS: u64 = 60;
 
 #[derive(Debug, Serialize)]
 struct ChatRequest {
@@ -64,7 +66,9 @@ pub fn generate_commit_message(
 
     let body = serde_json::to_string(&request)?;
 
-    let response = ureq::post(API_URL)
+    let agent = http_agent();
+    let response = agent
+        .post(API_URL)
         .header("Authorization", &format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         .send(&body)
@@ -128,7 +132,9 @@ pub fn validate_api_key(api_key: &str) -> Result<bool> {
 
     let body = serde_json::to_string(&request)?;
 
-    let response = ureq::post(API_URL)
+    let agent = http_agent();
+    let response = agent
+        .post(API_URL)
         .header("Authorization", &format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         .send(&body);
@@ -144,6 +150,45 @@ pub fn validate_api_key(api_key: &str) -> Result<bool> {
         }),
         Err(e) => Err(handle_ureq_error(e)),
     }
+}
+
+pub fn check_provider_ready(api_key: &str, model: &str) -> Result<()> {
+    let request = ChatRequest {
+        model: model.to_string(),
+        messages: vec![Message {
+            role: "user".to_string(),
+            content: "ping".to_string(),
+        }],
+        temperature: None,
+        max_completion_tokens: Some(4),
+        stream: false,
+    };
+
+    let body = serde_json::to_string(&request)?;
+    let agent = http_agent();
+    let response = agent
+        .post(API_URL)
+        .header("Authorization", &format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .send(&body)
+        .map_err(handle_ureq_error)?;
+
+    if !response.status().is_success() {
+        return Err(YetiError::ApiError {
+            status: response.status().as_u16(),
+            message: "Provider readiness check failed".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+fn http_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(REQUEST_TIMEOUT_SECS)))
+        .timeout_per_call(Some(Duration::from_secs(REQUEST_TIMEOUT_SECS)))
+        .build()
+        .new_agent()
 }
 
 fn handle_ureq_error(e: ureq::Error) -> YetiError {
@@ -200,4 +245,48 @@ fn sanitize_message(raw: &str) -> (String, Option<String>) {
 
 pub fn parse_commit_message(raw: &str) -> (String, Option<String>) {
     sanitize_message(raw)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_commit_message;
+
+    #[test]
+    fn parse_commit_message_strips_markdown_and_builds_body() {
+        let raw = "```text\n# heading\nfix[CORE]: handle rename metadata\n\nAdd rename source path to prompt context.\n```";
+        let (title, body) = parse_commit_message(raw);
+
+        assert_eq!(title, "fix[CORE]: handle rename metadata");
+        assert_eq!(
+            body.as_deref(),
+            Some("Add rename source path to prompt context.")
+        );
+    }
+
+    #[test]
+    fn parse_commit_message_falls_back_when_content_is_empty() {
+        let raw = "\u{0000}\u{0007}\n```";
+        let (title, body) = parse_commit_message(raw);
+
+        assert_eq!(title, "chore: update files");
+        assert!(body.is_none());
+    }
+
+    #[test]
+    fn parse_commit_message_limits_title_and_body_lines() {
+        let long_title = format!("feat[CORE]: {}", "x".repeat(120));
+        let raw = format!(
+            "{long_title}\n\nshort\nBody line one is long enough.\nBody line two is long enough.\nBody line three is long enough.\nBody line four is long enough."
+        );
+
+        let (title, body) = parse_commit_message(&raw);
+
+        assert_eq!(title.chars().count(), 72);
+        assert_eq!(
+            body.as_deref(),
+            Some(
+                "Body line one is long enough.\nBody line two is long enough.\nBody line three is long enough."
+            )
+        );
+    }
 }

@@ -67,3 +67,20 @@ pub fn save_api_key(key: &str) -> Result<()> {
     config.api_key = Some(key.to_string());
     save(&config)
 }
+
+pub fn clear_local_cache() -> Result<()> {
+    let path = config_path()?;
+    if path.exists() {
+        fs::remove_file(&path)?;
+    }
+
+    let dir = config_dir()?;
+    if dir.exists() {
+        let mut entries = fs::read_dir(&dir)?;
+        if entries.next().is_none() {
+            fs::remove_dir(&dir)?;
+        }
+    }
+
+    Ok(())
+}

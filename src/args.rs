@@ -13,4 +13,10 @@ pub struct Args {
 
     #[arg(long, help = "Reset your scent (force API key re-entry)")]
     pub reset_key: bool,
+
+    #[arg(
+        long,
+        help = "Clear local yeti cache/config (removes stored key and settings)"
+    )]
+    pub reset_cache: bool,
 }

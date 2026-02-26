@@ -41,6 +41,16 @@ struct Delta {
     content: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct StreamErrorResponse {
+    error: StreamError,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamError {
+    message: String,
+}
+
 pub fn generate_commit_message(
     api_key: &str,
     model: &str,
@@ -93,26 +103,47 @@ pub fn generate_commit_message(
             Err(e) => return Err(YetiError::NetworkError(e.to_string())),
         };
 
-        if line.is_empty() || !line.starts_with("data: ") {
+        if line.is_empty() {
             continue;
         }
 
-        let data = &line[6..];
+        let data = if line.starts_with("data: ") {
+            &line[6..]
+        } else {
+            &line
+        };
+
         if data == "[DONE]" {
             break;
         }
 
-        let stream_resp: StreamResponse = match serde_json::from_str(data) {
-            Ok(r) => r,
-            Err(_) => continue,
-        };
-
-        if let Some(choice) = stream_resp.choices.first()
-            && let Some(content) = &choice.delta.content
-        {
-            on_chunk(content);
-            full_content.push_str(content);
+        let stream_resp = serde_json::from_str::<StreamResponse>(data);
+        match stream_resp {
+            Ok(r) => {
+                if let Some(choice) = r.choices.first()
+                    && let Some(content) = &choice.delta.content
+                {
+                    on_chunk(content);
+                    full_content.push_str(content);
+                }
+            }
+            Err(_) => {
+                // Try parsing as an error response.
+                if let Ok(err_resp) = serde_json::from_str::<StreamErrorResponse>(data) {
+                    return Err(YetiError::ApiError {
+                        status: 500, // We may not have the true HTTP status here, default to 500
+                        message: err_resp.error.message,
+                    });
+                }
+            }
         }
+    }
+
+    if full_content.trim().is_empty() {
+        return Err(YetiError::ApiError {
+            status: 500,
+            message: "API returned an empty response".to_string(),
+        });
     }
 
     Ok(full_content)

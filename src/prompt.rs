@@ -109,14 +109,29 @@ fn build_change_tree(files: &[FileInfo]) -> String {
         ));
     }
 
-    lines.join("\n")
+    let mut result = lines.join("\n");
+    if result.len() > 10000 {
+        truncate_safely(&mut result, 10000);
+        result.push_str("\n...[truncated]");
+    }
+    result
+}
+
+fn truncate_safely(s: &mut String, mut len: usize) {
+    if len >= s.len() {
+        return;
+    }
+    while len > 0 && !s.is_char_boundary(len) {
+        len -= 1;
+    }
+    s.truncate(len);
 }
 
 fn build_patch_context(files: &[FileInfo]) -> String {
     let mut used = 0usize;
     let mut patches = Vec::new();
-    let max_total = 14_000usize;
-    let max_file = 2_200usize;
+    let max_total = 40_000usize;
+    let max_file = 6_000usize;
 
     for file in files {
         if file.diff.is_empty() {
@@ -130,7 +145,7 @@ fn build_patch_context(files: &[FileInfo]) -> String {
         };
         let mut body = file.diff.clone();
         if body.len() > max_file {
-            body.truncate(max_file);
+            truncate_safely(&mut body, max_file);
             body.push_str("\n...[truncated]");
         }
 
@@ -140,7 +155,7 @@ fn build_patch_context(files: &[FileInfo]) -> String {
             if remaining == 0 {
                 break;
             }
-            entry.truncate(remaining);
+            truncate_safely(&mut entry, remaining);
             entry.push_str("\n...[truncated]");
             patches.push(entry);
             break;
@@ -259,7 +274,7 @@ mod tests {
 
     #[test]
     fn user_prompt_includes_staged_patch_excerpts_and_truncates_long_diff() {
-        let long_diff = format!("+{}\n", "x".repeat(2500));
+        let long_diff = format!("+{}\n", "x".repeat(10000));
         let files = vec![file(
             "src/huge.rs",
             FileStatus::Modified,
@@ -273,6 +288,23 @@ mod tests {
 
         assert!(prompt.contains("Staged patch excerpts:"));
         assert!(prompt.contains("--- src/huge.rs"));
+        assert!(prompt.contains("...[truncated]"));
+    }
+
+    #[test]
+    fn user_prompt_truncates_huge_change_tree() {
+        let mut files = Vec::new();
+        for i in 0..150 {
+            let path = format!("src/module_{}/long_directory_name_to_take_up_space/submodule_to_increase_length/another_directory_level/file_{}.rs", i, i);
+            files.push(file(&path, FileStatus::Added, 10, 0, "+fn foo() {}", None));
+        }
+        
+        let prompt = build_user_prompt("main", &files);
+        let tree_idx = prompt.find("Change tree:\n").unwrap();
+        let diff_idx = prompt.find("\n\nUse this staged diff context").unwrap();
+        let tree_len = diff_idx - (tree_idx + "Change tree:\n".len());
+        
+        assert!(tree_len <= 10000 + "\n...[truncated]".len() + 100);
         assert!(prompt.contains("...[truncated]"));
     }
 }

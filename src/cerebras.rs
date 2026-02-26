@@ -260,8 +260,8 @@ fn sanitize_message(raw: &str) -> (String, Option<String>) {
     let body_lines: Vec<&str> = lines
         .iter()
         .skip(1)
-        .filter(|l| l.len() > 10)
-        .take(3)
+        .filter(|l| l.len() > 3)
+        .take(6)
         .cloned()
         .collect();
 
@@ -316,7 +316,7 @@ mod tests {
         assert_eq!(
             body.as_deref(),
             Some(
-                "Body line one is long enough.\nBody line two is long enough.\nBody line three is long enough."
+                "Body line one is long enough.\nBody line two is long enough.\nBody line three is long enough.\nBody line four is long enough."
             )
         );
     }
